@@ -1,0 +1,12 @@
+[package]
+name = "ipxml-runtime"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+clap = { version = "4", features = ["derive"] }
+ipxml-bundle = { path = "../ipxml-bundle" }
+ipxml-schema = { path = "../ipxml-schema" }
+ipxml-ui-core = { path = "../ipxml-ui-core" }
+ipxml-ui-egui = { path = "../ipxml-ui-egui" }
+anyhow = "1"

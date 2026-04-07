@@ -1,0 +1,12 @@
+[workspace]
+members = [
+    "crates/ipxml-schema",
+    "crates/ipxcs-core",
+    "crates/ipxml-bundle",
+    "crates/ipxml-ui-core",
+    "crates/ipxml-ui-egui",
+    "crates/ipxml-cc",
+    "crates/ipxml-runtime",
+]
+
+resolver = "2"

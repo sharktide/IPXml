@@ -1,0 +1,9 @@
+[package]
+name = "ipxml-bundle"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+zip = "0.6"
+thiserror = "1"
+ipxml-schema = { path = "../ipxml-schema" }

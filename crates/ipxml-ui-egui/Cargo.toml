@@ -1,0 +1,13 @@
+[package]
+name = "ipxml-ui-egui"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+eframe = "0.27"
+ipxml-ui-core = { path = "../ipxml-ui-core" }
+ipxml-schema = { path = "../ipxml-schema" }
+anyhow = "1"
+ndarray = "0.17"
+image = "0.24"
+ort = { version = "2.0.0-rc.12", features = ["ndarray", "download-binaries"] }
