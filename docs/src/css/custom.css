@@ -1,0 +1,26 @@
+:root {
+  --ifm-color-primary: #2563eb;
+  --ifm-color-primary-dark: #1d4ed8;
+  --ifm-color-primary-darker: #1e40af;
+  --ifm-color-primary-light: #3b82f6;
+  --ifm-color-primary-lighter: #60a5fa;
+  --ifm-font-family-base: 'IBM Plex Sans', system-ui, -apple-system, sans-serif;
+  --ifm-heading-font-family: 'IBM Plex Sans', system-ui, -apple-system, sans-serif;
+}
+
+.navbar__title {
+  font-weight: 700;
+  letter-spacing: 0.2px;
+}
+
+.hero__title {
+  font-size: 3rem;
+}
+
+.markdown h2 {
+  margin-top: 2rem;
+}
+
+.markdown code {
+  background-color: rgba(37, 99, 235, 0.08);
+}

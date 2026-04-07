@@ -2207,6 +2207,7 @@ dependencies = [
  "ipxml-schema",
  "ipxml-ui-core",
  "ipxml-ui-egui",
+ "serde_json",
 ]
 
 [[package]]

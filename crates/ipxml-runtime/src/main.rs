@@ -61,11 +61,15 @@ fn load_labels_from_bundle(
             } else if let Some(path) = &labels.path {
                 let bytes = read_asset_from_bundle(bundle, path)?;
                 let text = String::from_utf8(bytes)?;
-                let list = text
-                    .lines()
-                    .map(|line| line.trim().to_string())
-                    .filter(|line| !line.is_empty())
-                    .collect::<Vec<_>>();
+                let trimmed = text.trim_start();
+                let list = if trimmed.starts_with('[') {
+                    serde_json::from_str::<Vec<String>>(trimmed)?
+                } else {
+                    text.lines()
+                        .map(|line| line.trim().to_string())
+                        .filter(|line| !line.is_empty())
+                        .collect::<Vec<_>>()
+                };
                 map.insert(output.id.clone(), list);
             }
         }

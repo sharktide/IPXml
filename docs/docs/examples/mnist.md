@@ -1,0 +1,32 @@
+---
+id: mnist
+title: MNIST Example
+---
+
+This example uses the ONNX MNIST model in `examples/mnist`.
+
+```yaml
+name: MNIST Demo
+version: "0.1.0"
+model:
+  path: mnist-8.onnx
+inputs:
+  - id: Input3
+    label: Digit Image
+    type: image
+    tensor:
+      shape: [1, 1, 28, 28]
+      layout: nchw
+      normalize:
+        scale: 0.003921569
+        mean: [0.0]
+        std: [1.0]
+outputs:
+  - id: Plus214_Output_0
+    label: Logits
+    type: text
+layout:
+  rows:
+    - components: [Input3]
+    - components: [Plus214_Output_0]
+```

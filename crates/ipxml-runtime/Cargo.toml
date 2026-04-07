@@ -10,3 +10,4 @@ ipxml-schema = { path = "../ipxml-schema" }
 ipxml-ui-core = { path = "../ipxml-ui-core" }
 ipxml-ui-egui = { path = "../ipxml-ui-egui" }
 anyhow = "1"
+serde_json = "1"
