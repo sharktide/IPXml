@@ -13,6 +13,7 @@ use ort::{
     session::Session,
     value::{Tensor, ValueType},
 };
+use rfd::FileDialog;
 
 pub struct EguiBackend {
     app: IpxmlApp,
@@ -47,6 +48,7 @@ struct EguiApp {
     app: IpxmlApp,
     state: AppState,
     runner: Option<OnnxRunner>,
+    style_applied: bool,
 }
 
 struct AppState {
@@ -87,28 +89,36 @@ impl EguiApp {
             app,
             state,
             runner,
+            style_applied: false,
         }
     }
 }
 
 impl eframe::App for EguiApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        if !self.style_applied {
+            apply_style(ctx);
+            self.style_applied = true;
+        }
+
         egui::CentralPanel::default().show(ctx, |ui| {
             let (app, state) = (&self.app, &mut self.state);
 
-            ui.heading(&app.name);
-            if let Some(version) = &app.version {
-                ui.label(format!("Version {version}"));
-            }
+            header(ui, app);
 
             ui.separator();
 
             if app.layout.rows.is_empty() {
+                section_title(ui, "Inputs");
                 for input in &app.inputs {
                     render_input(ui, state, input);
+                    ui.add_space(6.0);
                 }
+                ui.add_space(8.0);
+                section_title(ui, "Outputs");
                 for output in &app.outputs {
                     render_output(ui, state, output);
+                    ui.add_space(6.0);
                 }
             } else {
                 for (row_idx, row) in app.layout.rows.iter().enumerate() {
@@ -125,24 +135,11 @@ impl eframe::App for EguiApp {
 
             ui.separator();
 
-            if ui.button("Run Model").clicked() {
-                if let Some(runner) = &mut self.runner {
-                    match runner.run(app, &state.inputs) {
-                        Ok(outputs) => {
-                            state.outputs = outputs;
-                            state.status.clear();
-                        }
-                        Err(err) => {
-                            state.status = format!("Run failed: {err}");
-                        }
-                    }
-                } else {
-                    state.status = "ONNX runtime not available.".to_string();
-                }
-            }
+            run_section(ui, app, state, &mut self.runner);
 
             if !state.status.is_empty() {
-                ui.label(&state.status);
+                ui.add_space(6.0);
+                ui.colored_label(egui::Color32::from_rgb(180, 80, 40), &state.status);
             }
         });
     }
@@ -167,7 +164,7 @@ fn render_input(ui: &mut egui::Ui, state: &mut AppState, spec: &InputSpec) {
         .entry(spec.id.clone())
         .or_insert_with(|| input_value_for_spec(spec));
 
-    ui.group(|ui| match (spec.kind.trim().to_ascii_lowercase().as_str(), value) {
+    card(ui, |ui| match (spec.kind.trim().to_ascii_lowercase().as_str(), value) {
         ("text" | "string", InputValue::Text(current)) => {
             ui.label(&spec.label);
             ui.text_edit_singleline(current);
@@ -178,14 +175,28 @@ fn render_input(ui: &mut egui::Ui, state: &mut AppState, spec: &InputSpec) {
         }
         ("number" | "float" | "int" | "integer", InputValue::Number(current)) => {
             ui.label(&spec.label);
-            ui.add(egui::DragValue::new(current));
+            ui.add(egui::DragValue::new(current).speed(0.05));
         }
         ("bool" | "boolean", InputValue::Bool(current)) => {
             ui.checkbox(current, &spec.label);
         }
         ("image" | "file" | "path", InputValue::ImagePath(current)) => {
             ui.label(&spec.label);
-            ui.text_edit_singleline(current);
+            ui.add_space(4.0);
+            ui.horizontal(|ui| {
+                if ui
+                    .add_sized(
+                        [90.0, 32.0],
+                        egui::Button::new("Upload").fill(accent_color()),
+                    )
+                    .clicked()
+                {
+                    if let Some(file) = FileDialog::new().pick_file() {
+                        *current = file.display().to_string();
+                    }
+                }
+                ui.text_edit_singleline(current);
+            });
         }
         (_, InputValue::Text(current)) => {
             ui.label(format!("{} ({})", spec.label, spec.kind));
@@ -204,7 +215,7 @@ fn render_output(ui: &mut egui::Ui, state: &mut AppState, spec: &OutputSpec) {
         .entry(spec.id.clone())
         .or_insert_with(|| output_value_for_spec(spec));
 
-    ui.group(|ui| match (spec.kind.trim().to_ascii_lowercase().as_str(), value) {
+    card(ui, |ui| match (spec.kind.trim().to_ascii_lowercase().as_str(), value) {
         ("text" | "label" | "string", OutputValue::Text(current)) => {
             ui.label(&spec.label);
             ui.label(current.as_str());
@@ -226,6 +237,105 @@ fn render_output(ui: &mut egui::Ui, state: &mut AppState, spec: &OutputSpec) {
             ui.label("Unsupported output type.");
         }
     });
+}
+
+fn run_section(
+    ui: &mut egui::Ui,
+    app: &IpxmlApp,
+    state: &mut AppState,
+    runner: &mut Option<OnnxRunner>,
+) {
+    ui.horizontal(|ui| {
+        let run_button = egui::Button::new("Run Model")
+            .fill(accent_color())
+            .rounding(egui::Rounding::same(10.0));
+        if ui.add_sized([140.0, 36.0], run_button).clicked() {
+            if let Some(runner) = runner {
+                match runner.run(app, &state.inputs) {
+                    Ok(outputs) => {
+                        state.outputs = outputs;
+                        state.status.clear();
+                    }
+                    Err(err) => {
+                        state.status = format!("Run failed: {err}");
+                    }
+                }
+            } else {
+                state.status = "ONNX runtime not available.".to_string();
+            }
+        }
+        ui.label("Preprocessing and inference execute locally.");
+    });
+}
+
+fn header(ui: &mut egui::Ui, app: &IpxmlApp) {
+    ui.horizontal(|ui| {
+        ui.heading(&app.name);
+        if let Some(version) = &app.version {
+            ui.label(format!("v{version}"));
+        }
+    });
+    ui.label("IPXml runtime");
+}
+
+fn section_title(ui: &mut egui::Ui, title: &str) {
+    ui.add_space(4.0);
+    ui.label(
+        egui::RichText::new(title)
+            .size(16.0)
+            .color(egui::Color32::from_rgb(60, 70, 90))
+            .strong(),
+    );
+    ui.add_space(4.0);
+}
+
+fn card(ui: &mut egui::Ui, content: impl FnOnce(&mut egui::Ui)) {
+    let frame = egui::Frame::none()
+        .fill(egui::Color32::from_rgb(255, 255, 255))
+        .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgb(220, 226, 235)))
+        .rounding(egui::Rounding::same(12.0))
+        .inner_margin(egui::Margin::same(12.0));
+    frame.show(ui, content);
+}
+
+fn accent_color() -> egui::Color32 {
+    egui::Color32::from_rgb(64, 130, 255)
+}
+
+fn apply_style(ctx: &egui::Context) {
+    let mut style = (*ctx.style()).clone();
+    style.spacing.item_spacing = egui::vec2(12.0, 10.0);
+    style.spacing.button_padding = egui::vec2(12.0, 8.0);
+    style.spacing.window_margin = egui::Margin::same(16.0);
+    style.text_styles.insert(
+        egui::TextStyle::Heading,
+        egui::FontId::proportional(28.0),
+    );
+    style.text_styles.insert(
+        egui::TextStyle::Body,
+        egui::FontId::proportional(15.0),
+    );
+    style.text_styles.insert(
+        egui::TextStyle::Button,
+        egui::FontId::proportional(15.0),
+    );
+
+    let mut visuals = egui::Visuals::light();
+    visuals.window_rounding = egui::Rounding::same(12.0);
+    visuals.widgets.inactive.rounding = egui::Rounding::same(8.0);
+    visuals.widgets.hovered.rounding = egui::Rounding::same(8.0);
+    visuals.widgets.active.rounding = egui::Rounding::same(8.0);
+    visuals.panel_fill = egui::Color32::from_rgb(245, 247, 250);
+    visuals.window_fill = egui::Color32::from_rgb(250, 252, 255);
+    visuals.widgets.inactive.bg_fill = egui::Color32::from_rgb(255, 255, 255);
+    visuals.widgets.inactive.bg_stroke = egui::Stroke::new(1.0, egui::Color32::from_rgb(220, 226, 235));
+    visuals.widgets.hovered.bg_fill = egui::Color32::from_rgb(238, 244, 255);
+    visuals.widgets.active.bg_fill = egui::Color32::from_rgb(230, 238, 255);
+    visuals.selection.bg_fill = egui::Color32::from_rgb(207, 225, 255);
+    visuals.selection.stroke = egui::Stroke::new(1.0, egui::Color32::from_rgb(120, 160, 255));
+
+    style.visuals = visuals;
+    ctx.set_style(style);
 }
 
 fn set_output_status(value: &mut OutputValue, status: &str) {
@@ -545,10 +655,29 @@ fn tensor_to_output(array: ArrayD<f32>, spec: Option<&OutputSpec>) -> Result<Out
             let value = array.iter().next().copied().unwrap_or(0.0);
             Ok(OutputValue::Number(value as f64))
         }
-        _ => Ok(OutputValue::Text(format!(
-            "Tensor shape {:?}, sample {:?}",
-            array.shape(),
-            array.iter().take(5).collect::<Vec<_>>()
-        ))),
+        _ => {
+            let values: Vec<f32> = array.iter().copied().collect();
+            let formatted = format_values(&values, 32);
+            Ok(OutputValue::Text(format!(
+                "Tensor shape {:?}: {}",
+                array.shape(),
+                formatted
+            )))
+        }
     }
+}
+
+fn format_values(values: &[f32], max_values: usize) -> String {
+    if values.is_empty() {
+        return "[]".to_string();
+    }
+    let take = values.len().min(max_values);
+    let mut parts = Vec::with_capacity(take);
+    for v in values.iter().take(take) {
+        parts.push(format!("{v:.4}"));
+    }
+    if values.len() > max_values {
+        parts.push(format!("... ({} total)", values.len()));
+    }
+    format!("[{}]", parts.join(", "))
 }
