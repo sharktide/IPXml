@@ -35,6 +35,7 @@ pub enum OutputValue {
     Text(String),
     Number(f64),
     ImagePath(String),
+    ClassScores(Vec<(String, f32)>),
 }
 
 pub fn input_value_for_spec(spec: &InputSpec) -> InputValue {
@@ -52,6 +53,7 @@ pub fn output_value_for_spec(spec: &OutputSpec) -> OutputValue {
         "text" | "label" | "string" => OutputValue::Text(String::new()),
         "number" | "float" | "int" | "integer" => OutputValue::Number(0.0),
         "image" | "file" | "path" => OutputValue::ImagePath(String::new()),
+        "scores" | "classes" => OutputValue::ClassScores(Vec::new()),
         _ => OutputValue::Text(String::new()),
     }
 }

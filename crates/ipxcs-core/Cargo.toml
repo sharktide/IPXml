@@ -5,5 +5,8 @@ edition = "2024"
 
 [dependencies]
 anyhow = "1.0.102"
-ndarray = "0.15"
+ndarray = "0.17"
+ndarray-stats = "0.7"
+rhai = "1"
 thiserror = "1"
+ipxml-schema = { path = "../ipxml-schema" }

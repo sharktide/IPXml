@@ -5,6 +5,7 @@ edition = "2024"
 
 [dependencies]
 eframe = "0.27"
+ipxcs-core = { path = "../ipxcs-core" }
 ipxml-ui-core = { path = "../ipxml-ui-core" }
 ipxml-schema = { path = "../ipxml-schema" }
 anyhow = "1"

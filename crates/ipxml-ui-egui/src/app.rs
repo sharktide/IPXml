@@ -3,7 +3,8 @@ use std::collections::HashMap;
 use anyhow::{anyhow, Context, Result};
 use eframe::egui;
 use image::{DynamicImage, GenericImageView};
-use ipxml_schema::{IpxmlApp, InputSpec, OutputSpec, TensorSpec};
+use ipxml_schema::{DecodeSpec, IpxmlApp, InputSpec, OutputSpec, TensorSpec};
+use ipxcs_core::{apply_ops, argmax, softmax, topk_indices, topk_values, Tensor as CoreTensor};
 use ipxml_ui_core::{
     find_input, find_output, input_value_for_spec, output_value_for_spec, InputValue, OutputValue,
     UiBackend, UiContext,
@@ -18,11 +19,16 @@ use rfd::FileDialog;
 pub struct EguiBackend {
     app: IpxmlApp,
     model_bytes: Vec<u8>,
+    labels: HashMap<String, Vec<String>>,
 }
 
 impl EguiBackend {
-    pub fn new(app: IpxmlApp, model_bytes: Vec<u8>) -> Self {
-        Self { app, model_bytes }
+    pub fn new(app: IpxmlApp, model_bytes: Vec<u8>, labels: HashMap<String, Vec<String>>) -> Self {
+        Self {
+            app,
+            model_bytes,
+            labels,
+        }
     }
 }
 
@@ -30,6 +36,7 @@ impl UiBackend for EguiBackend {
     fn run(self: Box<Self>, _ctx: UiContext) {
         let app = self.app;
         let model_bytes = self.model_bytes;
+        let labels = self.labels;
 
         let title = app.name.clone();
 
@@ -38,7 +45,7 @@ impl UiBackend for EguiBackend {
         eframe::run_native(
             &title,
             native_options,
-            Box::new(|_cc| Box::new(EguiApp::new(app, model_bytes))),
+            Box::new(|_cc| Box::new(EguiApp::new(app, model_bytes, labels))),
         )
         .unwrap();
     }
@@ -49,6 +56,7 @@ struct EguiApp {
     state: AppState,
     runner: Option<OnnxRunner>,
     style_applied: bool,
+    labels: HashMap<String, Vec<String>>,
 }
 
 struct AppState {
@@ -58,7 +66,7 @@ struct AppState {
 }
 
 impl EguiApp {
-    fn new(app: IpxmlApp, model_bytes: Vec<u8>) -> Self {
+    fn new(app: IpxmlApp, model_bytes: Vec<u8>, labels: HashMap<String, Vec<String>>) -> Self {
         let mut inputs = HashMap::new();
         for spec in &app.inputs {
             inputs.insert(spec.id.clone(), input_value_for_spec(spec));
@@ -90,6 +98,7 @@ impl EguiApp {
             state,
             runner,
             style_applied: false,
+            labels,
         }
     }
 }
@@ -135,7 +144,7 @@ impl eframe::App for EguiApp {
 
             ui.separator();
 
-            run_section(ui, app, state, &mut self.runner);
+            run_section(ui, app, state, &mut self.runner, &self.labels);
 
             if !state.status.is_empty() {
                 ui.add_space(6.0);
@@ -228,6 +237,21 @@ fn render_output(ui: &mut egui::Ui, state: &mut AppState, spec: &OutputSpec) {
             ui.label(&spec.label);
             ui.label(current.as_str());
         }
+        (_, OutputValue::ClassScores(scores)) => {
+            ui.label(&spec.label);
+            egui::Grid::new(format!("scores_{}", spec.id))
+                .striped(true)
+                .show(ui, |ui| {
+                    ui.label("Label");
+                    ui.label("Score");
+                    ui.end_row();
+                    for (label, score) in scores.iter().take(20) {
+                        ui.label(label);
+                        ui.label(format!("{score:.4}"));
+                        ui.end_row();
+                    }
+                });
+        }
         (_, OutputValue::Text(current)) => {
             ui.label(format!("{} ({})", spec.label, spec.kind));
             ui.label(current.as_str());
@@ -244,6 +268,7 @@ fn run_section(
     app: &IpxmlApp,
     state: &mut AppState,
     runner: &mut Option<OnnxRunner>,
+    labels: &HashMap<String, Vec<String>>,
 ) {
     ui.horizontal(|ui| {
         let run_button = egui::Button::new("Run Model")
@@ -251,7 +276,7 @@ fn run_section(
             .rounding(egui::Rounding::same(10.0));
         if ui.add_sized([140.0, 36.0], run_button).clicked() {
             if let Some(runner) = runner {
-                match runner.run(app, &state.inputs) {
+                match runner.run(app, &state.inputs, labels) {
                     Ok(outputs) => {
                         state.outputs = outputs;
                         state.status.clear();
@@ -350,13 +375,15 @@ fn set_output_status(value: &mut OutputValue, status: &str) {
         OutputValue::ImagePath(current) => {
             current.clear();
         }
+        OutputValue::ClassScores(current) => {
+            current.clear();
+        }
     }
 }
 
 struct OnnxRunner {
     session: Session,
     input_meta: Vec<InputMeta>,
-    output_meta: Vec<OutputMeta>,
 }
 
 #[derive(Debug, Clone)]
@@ -365,10 +392,6 @@ struct InputMeta {
     shape: Vec<i64>,
 }
 
-#[derive(Debug, Clone)]
-struct OutputMeta {
-    name: String,
-}
 
 impl OnnxRunner {
     fn new(model_bytes: Vec<u8>) -> Result<Self> {
@@ -386,18 +409,9 @@ impl OnnxRunner {
             })
             .collect();
 
-        let output_meta = session
-            .outputs()
-            .iter()
-            .map(|output| OutputMeta {
-                name: output.name().to_string(),
-            })
-            .collect();
-
         Ok(Self {
             session,
             input_meta,
-            output_meta,
         })
     }
 
@@ -405,6 +419,7 @@ impl OnnxRunner {
         &mut self,
         app: &IpxmlApp,
         inputs: &HashMap<String, InputValue>,
+        labels: &HashMap<String, Vec<String>>,
     ) -> Result<HashMap<String, OutputValue>> {
         let mut input_values: Vec<(String, Tensor<f32>)> = Vec::new();
         for input in &self.input_meta {
@@ -423,20 +438,16 @@ impl OnnxRunner {
             .context("execute ONNX model")?;
 
         let mut result = HashMap::new();
-        for (name, output) in outputs.iter() {
-            let spec = find_output(app, name);
-            let output_value = output_to_value(&output, spec)?;
-            result.insert(name.to_string(), output_value);
-        }
-
-        for meta in &self.output_meta {
-            if !result.contains_key(&meta.name) {
-                let spec = find_output(app, &meta.name);
-                let mut value = spec
-                    .map(output_value_for_spec)
-                    .unwrap_or(OutputValue::Text(String::new()));
+        for spec in &app.outputs {
+            let source = spec.source.as_deref().unwrap_or(&spec.id);
+            if let Some(output) = outputs.get(source) {
+                let labels = labels.get(&spec.id);
+                let output_value = process_output(output, spec, labels)?;
+                result.insert(spec.id.clone(), output_value);
+            } else {
+                let mut value = output_value_for_spec(spec);
                 set_output_status(&mut value, "Missing output from model.");
-                result.insert(meta.name.clone(), value);
+                result.insert(spec.id.clone(), value);
             }
         }
 
@@ -459,7 +470,11 @@ fn build_input_tensor(input: &InputMeta, spec: &InputSpec, value: &InputValue) -
         InputValue::ImagePath(path) => image_to_array(path, spec, &shape)?,
     };
 
-    Tensor::from_array(array).context("create input tensor")
+    let mut tensor = CoreTensor::new(array);
+    if let Some(ops) = &spec.preprocess {
+        tensor = apply_ops(tensor, ops)?;
+    }
+    Tensor::from_array(tensor.into_data()).context("create input tensor")
 }
 
 fn resolve_shape(
@@ -629,42 +644,143 @@ fn apply_normalize(tensor: Option<&TensorSpec>, mut array: Array3<f32>) -> Resul
     Ok(array)
 }
 
-fn output_to_value(output: &ort::value::ValueRef<'_>, spec: Option<&OutputSpec>) -> Result<OutputValue> {
+fn process_output(
+    output: &ort::value::DynValue,
+    spec: &OutputSpec,
+    labels: Option<&Vec<String>>,
+) -> Result<OutputValue> {
+    let mut tensor = extract_output_tensor(output)?;
+    if let Some(ops) = &spec.postprocess {
+        tensor = apply_ops(tensor, ops)?;
+    }
+
+    let decoded = decode_output(&tensor, spec.decode.as_ref())?;
+    Ok(map_decoded_output(decoded, spec, labels))
+}
+
+#[derive(Debug)]
+enum DecodedOutput {
+    Tensor(CoreTensor),
+    Index(usize),
+    Scores(Vec<(usize, f32)>),
+}
+
+fn extract_output_tensor(output: &ort::value::DynValue) -> Result<CoreTensor> {
     if let Ok(array) = output.try_extract_array::<f32>() {
-        return tensor_to_output(array.to_owned(), spec);
+        return Ok(CoreTensor::new(array.to_owned()));
     }
     if let Ok(array) = output.try_extract_array::<f64>() {
         let data = array.mapv(|v| v as f32).to_owned();
-        return tensor_to_output(data.into_dyn(), spec);
+        return Ok(CoreTensor::new(data.into_dyn()));
     }
     if let Ok(array) = output.try_extract_array::<i64>() {
         let data = array.mapv(|v| v as f32).to_owned();
-        return tensor_to_output(data.into_dyn(), spec);
+        return Ok(CoreTensor::new(data.into_dyn()));
     }
 
-    let kind = spec.map(|s| s.kind.as_str()).unwrap_or("text");
-    Ok(OutputValue::Text(format!(
-        "Unsupported output value type ({kind})"
-    )))
+    Err(anyhow!("Unsupported output value type"))
 }
 
-fn tensor_to_output(array: ArrayD<f32>, spec: Option<&OutputSpec>) -> Result<OutputValue> {
-    let kind = spec.map(|s| s.kind.trim().to_ascii_lowercase());
-    match kind.as_deref() {
-        Some("number" | "float" | "int" | "integer") => {
-            let value = array.iter().next().copied().unwrap_or(0.0);
-            Ok(OutputValue::Number(value as f64))
+fn decode_output(tensor: &CoreTensor, decode: Option<&DecodeSpec>) -> Result<DecodedOutput> {
+    match decode.unwrap_or(&DecodeSpec::Identity) {
+        DecodeSpec::Identity => Ok(DecodedOutput::Tensor(tensor.clone())),
+        DecodeSpec::Softmax { axis } => {
+            let result = softmax(tensor, *axis)?;
+            Ok(DecodedOutput::Tensor(result))
         }
-        _ => {
-            let values: Vec<f32> = array.iter().copied().collect();
-            let formatted = format_values(&values, 32);
-            Ok(OutputValue::Text(format!(
-                "Tensor shape {:?}: {}",
-                array.shape(),
-                formatted
-            )))
+        DecodeSpec::ArgMax { axis } => {
+            let result = argmax(tensor, *axis)?;
+            if result.data.len() == 1 {
+                let idx = result.data.iter().next().copied().unwrap_or(0.0) as usize;
+                Ok(DecodedOutput::Index(idx))
+            } else {
+                Ok(DecodedOutput::Tensor(result))
+            }
+        }
+        DecodeSpec::TopK { k, axis } => {
+            if let Ok(scores) = topk_indices(tensor, *k, *axis, true) {
+                Ok(DecodedOutput::Scores(scores))
+            } else {
+                let values = topk_values(tensor, *k, *axis, true)?;
+                Ok(DecodedOutput::Tensor(values))
+            }
         }
     }
+}
+
+fn map_decoded_output(
+    decoded: DecodedOutput,
+    spec: &OutputSpec,
+    labels: Option<&Vec<String>>,
+) -> OutputValue {
+    match decoded {
+        DecodedOutput::Index(index) => {
+            if let Some(labels) = labels {
+                let label = labels.get(index).cloned().unwrap_or_else(|| format!("class_{index}"));
+                OutputValue::ClassScores(vec![(label, 1.0)])
+            } else {
+                OutputValue::Text(format!("Index: {index}"))
+            }
+        }
+        DecodedOutput::Scores(scores) => {
+            if let Some(labels) = labels {
+                let mapped = scores
+                    .into_iter()
+                    .map(|(idx, score)| {
+                        let label = labels.get(idx).cloned().unwrap_or_else(|| format!("class_{idx}"));
+                        (label, score)
+                    })
+                    .collect();
+                OutputValue::ClassScores(mapped)
+            } else {
+                let formatted = scores
+                    .into_iter()
+                    .map(|(idx, score)| format!("{idx}: {score:.4}"))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                OutputValue::Text(format!("TopK: [{formatted}]"))
+            }
+        }
+        DecodedOutput::Tensor(tensor) => tensor_to_output(&tensor, spec, labels),
+    }
+}
+
+fn tensor_to_output(tensor: &CoreTensor, spec: &OutputSpec, labels: Option<&Vec<String>>) -> OutputValue {
+    let kind = spec.kind.trim().to_ascii_lowercase();
+    if matches!(kind.as_str(), "number" | "float" | "int" | "integer") && tensor.data.len() == 1 {
+        let value = tensor.data.iter().next().copied().unwrap_or(0.0);
+        return OutputValue::Number(value as f64);
+    }
+
+    if let Some(labels) = labels {
+        if let Some(scores) = tensor_to_scores(tensor, labels) {
+            return OutputValue::ClassScores(scores);
+        }
+    }
+
+    let values: Vec<f32> = tensor.data.iter().copied().collect();
+    let formatted = format_values(&values, 32);
+    OutputValue::Text(format!(
+        "Tensor shape {:?}: {}",
+        tensor.data.shape(),
+        formatted
+    ))
+}
+
+fn tensor_to_scores(tensor: &CoreTensor, labels: &[String]) -> Option<Vec<(String, f32)>> {
+    let shape = tensor.data.shape();
+    let values: Vec<f32> = tensor.data.iter().copied().collect();
+    if values.len() != labels.len() && !(shape.len() == 2 && shape[0] == 1 && shape[1] == labels.len()) {
+        return None;
+    }
+
+    let mut pairs = labels
+        .iter()
+        .cloned()
+        .zip(values.into_iter())
+        .collect::<Vec<_>>();
+    pairs.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
+    Some(pairs)
 }
 
 fn format_values(values: &[f32], max_values: usize) -> String {
@@ -680,4 +796,74 @@ fn format_values(values: &[f32], max_values: usize) -> String {
         parts.push(format!("... ({} total)", values.len()));
     }
     format!("[{}]", parts.join(", "))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ipxml_schema::OpSpec;
+
+    fn base_output_spec(kind: &str) -> OutputSpec {
+        OutputSpec {
+            id: "out".to_string(),
+            label: "Output".to_string(),
+            kind: kind.to_string(),
+            tensor: None,
+            source: None,
+            postprocess: None,
+            labels: None,
+            decode: None,
+        }
+    }
+
+    #[test]
+    fn decode_topk_with_labels() {
+        let data = ArrayD::from_shape_vec(IxDyn(&[1, 4]), vec![0.1, 0.7, 0.2, 0.5]).unwrap();
+        let tensor = CoreTensor::new(data);
+        let decoded = decode_output(
+            &tensor,
+            Some(&DecodeSpec::TopK {
+                k: 2,
+                axis: Some(1),
+            }),
+        )
+        .unwrap();
+        let labels = vec![
+            "zero".to_string(),
+            "one".to_string(),
+            "two".to_string(),
+            "three".to_string(),
+        ];
+        let spec = base_output_spec("scores");
+        let output = map_decoded_output(decoded, &spec, Some(&labels));
+        match output {
+            OutputValue::ClassScores(scores) => {
+                assert_eq!(scores.len(), 2);
+                assert_eq!(scores[0].0, "one");
+            }
+            _ => panic!("expected class scores"),
+        }
+    }
+
+    #[test]
+    fn postprocess_pipeline_runs() {
+        let data = ArrayD::from_shape_vec(IxDyn(&[1, 2]), vec![1.0, 2.0]).unwrap();
+        let tensor = CoreTensor::new(data);
+        let ops = vec![
+            OpSpec::Scale { factor: 2.0 },
+            OpSpec::Add {
+                value: Some(1.0),
+                tensor: None,
+            },
+        ];
+        let processed = apply_ops(tensor, &ops).unwrap();
+        let spec = base_output_spec("text");
+        let output = tensor_to_output(&processed, &spec, None);
+        match output {
+            OutputValue::Text(text) => {
+                assert!(text.contains("Tensor shape"));
+            }
+            _ => panic!("expected text output"),
+        }
+    }
 }

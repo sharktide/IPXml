@@ -14,11 +14,18 @@ pub enum BundleError {
     Zip(#[from] zip::result::ZipError),
 }
 
+#[derive(Debug, Clone)]
+pub struct BundleAsset {
+    pub path: String,
+    pub bytes: Vec<u8>,
+}
+
 pub fn create_bundle<P: AsRef<Path>>(
     output: P,
     app: &IpxmlApp,
     ipxml_source: &str,
     onnx_bytes: &[u8],
+    assets: &[BundleAsset],
 ) -> Result<(), BundleError> {
     let file = File::create(output)?;
     let mut zip = ZipWriter::new(file);
@@ -33,6 +40,11 @@ pub fn create_bundle<P: AsRef<Path>>(
     zip.start_file(&app.model.path, options)?;
     zip.write_all(onnx_bytes)?;
 
+    for asset in assets {
+        zip.start_file(&asset.path, options)?;
+        zip.write_all(&asset.bytes)?;
+    }
+
     zip.finish()?;
     Ok(())
 }
@@ -44,6 +56,18 @@ pub fn read_ipxml_from_bundle<P: AsRef<Path>>(path: P) -> Result<String, BundleE
     let mut s = String::new();
     f.read_to_string(&mut s)?;
     Ok(s)
+}
+
+pub fn read_asset_from_bundle<P: AsRef<Path>>(
+    path: P,
+    asset_path: &str,
+) -> Result<Vec<u8>, BundleError> {
+    let file = File::open(path)?;
+    let mut archive = zip::ZipArchive::new(file)?;
+    let mut f = archive.by_name(asset_path)?;
+    let mut bytes = Vec::new();
+    f.read_to_end(&mut bytes)?;
+    Ok(bytes)
 }
 
 pub fn read_model_from_bundle<P: AsRef<Path>>(
