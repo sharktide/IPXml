@@ -38,6 +38,10 @@ layout:
     - components: [output]
 ```
 
+### Auto-Infer (Fastest)
+
+If you omit `inputs` and `outputs`, IPXml will infer them from the model and generate a basic layout automatically.
+
 ## Project Structure
 
 - `.ipxml` file (schema)

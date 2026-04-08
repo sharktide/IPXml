@@ -18,6 +18,8 @@ layout:
   rows: []
 ```
 
+`inputs`, `outputs`, and `layout` may be omitted. If missing, IPXml will infer inputs/outputs from the ONNX model and generate a default layout.
+
 ### Multiple Models
 
 ```yaml

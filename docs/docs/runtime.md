@@ -11,6 +11,14 @@ The runtime loads a bundle, builds the UI, runs preprocessing, invokes ONNX Runt
 ipxml run path/to/model.ipxmodel.import
 ```
 
+## Run in the Browser
+
+```bash
+ipxml run path/to/model.ipxmodel.import --serve --port 7860
+```
+
+Then open `http://localhost:7860` in your browser.
+
 ## Execution Flow
 
 1. Parse schema

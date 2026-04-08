@@ -1,0 +1,4 @@
+name: Inception v3 Demo
+version: "1.0"
+model:
+  path: adv_inception_v3_Opset18.onnx

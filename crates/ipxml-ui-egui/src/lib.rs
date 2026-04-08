@@ -1,3 +1,3 @@
 mod app;
 
-pub use app::{EguiBackend, ModelEntry};
+pub use app::{EguiBackend, ModelEntry, PipelineRunner};

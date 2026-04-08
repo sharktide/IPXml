@@ -8,8 +8,11 @@ pub struct IpxmlApp {
     pub model: Option<ModelSpec>,
     #[serde(default)]
     pub models: Option<Vec<ModelSpec>>,
+    #[serde(default)]
     pub inputs: Vec<InputSpec>,
+    #[serde(default)]
     pub outputs: Vec<OutputSpec>,
+    #[serde(default)]
     pub layout: LayoutSpec,
 }
 
@@ -64,7 +67,7 @@ pub struct OutputSpec {
     pub decode: Option<DecodeSpec>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Default)]
 pub struct LayoutSpec {
     pub rows: Vec<LayoutRow>,
 }

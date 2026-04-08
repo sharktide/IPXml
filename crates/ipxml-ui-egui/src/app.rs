@@ -387,7 +387,7 @@ fn set_output_status(value: &mut OutputValue, status: &str) {
     }
 }
 
-struct PipelineRunner {
+pub struct PipelineRunner {
     models: Vec<ModelRunner>,
 }
 
@@ -405,7 +405,7 @@ struct InputMeta {
 }
 
 impl PipelineRunner {
-    fn new(models: Vec<ModelEntry>) -> Result<Self> {
+    pub fn new(models: Vec<ModelEntry>) -> Result<Self> {
         if models.is_empty() {
             return Err(anyhow!("No models provided"));
         }
@@ -440,7 +440,7 @@ impl PipelineRunner {
         Ok(Self { models: runners })
     }
 
-    fn run(
+    pub fn run(
         &mut self,
         app: &IpxmlApp,
         inputs: &HashMap<String, InputValue>,
