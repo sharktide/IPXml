@@ -4,13 +4,14 @@ const { themes } = require('prism-react-renderer');
 const lightCodeTheme = themes.github;
 const darkCodeTheme = themes.dracula;
 import 'dotenv/config';
+const isRTD = process.env.READTHEDOCS === 'True';
 
 /** @type {import('@docusaurus/types').Config} */
 const config = {
   title: 'IPXml',
   tagline: 'Declarative UI + preprocessing for ONNX apps',
   url: process.env.READTHEDOCS_CANONICAL_URL || 'https://localhost:3000',
-  baseUrl: '/',
+  baseUrl: isRTD ? `/${process.env.READTHEDOCS_LANGUAGE}/${process.env.READTHEDOCS_VERSION}/` : '/',
   onBrokenLinks: 'throw',
   favicon: 'img/favicon.ico',
   trailingSlash: true,
