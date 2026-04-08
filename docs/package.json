@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@docusaurus/core": "^3.10.0",
-    "@docusaurus/preset-classic": "^3.10.0"
+    "@docusaurus/preset-classic": "^3.10.0",
+    "dotenv": "^17.4.1"
   }
 }

@@ -3,17 +3,17 @@
 const { themes } = require('prism-react-renderer');
 const lightCodeTheme = themes.github;
 const darkCodeTheme = themes.dracula;
+import 'dotenv/config';
 
 /** @type {import('@docusaurus/types').Config} */
 const config = {
   title: 'IPXml',
   tagline: 'Declarative UI + preprocessing for ONNX apps',
-  url: 'https://ipxml.local',
+  url: process.env.READTHEDOCS_CANONICAL_URL || 'https://localhost:3000',
   baseUrl: '/',
   onBrokenLinks: 'throw',
-  onBrokenMarkdownLinks: 'warn',
   favicon: 'img/favicon.ico',
-
+  trailingSlash: true,
   organizationName: 'ipxml',
   projectName: 'ipxml',
 
@@ -72,7 +72,12 @@ const config = {
         theme: lightCodeTheme,
         darkTheme: darkCodeTheme
       }
-    })
+    }),
+    markdown: {
+      hooks: {
+        onBrokenMarkdownLinks: 'warn'
+      }
+    }
 };
 
 module.exports = config;
