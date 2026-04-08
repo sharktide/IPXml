@@ -10,7 +10,7 @@ title: Getting Started
 3. Run the bundle with the runtime.
 
 ```bash
-ipxml bundle examples/mnist/app.ipxml -o mnist.ipxmodel.import
+ipxml cc --ipxml examples/mnist/app.ipxml --model examples/mnist/mnist-8.onnx --out mnist.ipxmodel.import
 ipxml run mnist.ipxmodel.import
 ```
 
@@ -43,3 +43,10 @@ layout:
 - `.ipxml` file (schema)
 - `.onnx` file (model)
 - optional assets (labels, images, example inputs)
+
+## If You’re New to Tensors
+
+You don’t need to think about math. For images, just remember:
+
+- `[1, 3, 224, 224]` means 1 image, 3 color channels (RGB), 224x224 pixels.
+- IPXml converts your upload into that tensor for you.

@@ -18,6 +18,22 @@ layout:
   rows: []
 ```
 
+### Multiple Models
+
+```yaml
+models:
+  - id: encoder
+    path: encoder.onnx
+    inputs:
+      - name: input
+        source: image
+  - id: classifier
+    path: classifier.onnx
+    inputs:
+      - name: features
+        source: encoder:output
+```
+
 ## InputSpec
 
 ```yaml
@@ -37,6 +53,16 @@ layout:
       height: 256
 ```
 
+If your model input names do not match your UI input ids, use **model input bindings**:
+
+```yaml
+model:
+  path: model.onnx
+  inputs:
+    - name: actual_model_input_name
+      source: input_id
+```
+
 ## OutputSpec
 
 ```yaml
@@ -44,6 +70,7 @@ layout:
   label: Output Label
   type: text | number | scores | image | file | path
   source: output_name_in_onnx   # defaults to id
+  model: model_id               # required if multiple models are present
   postprocess:
     - op: softmax
       axis: 1

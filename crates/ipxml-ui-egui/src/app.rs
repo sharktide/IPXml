@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use anyhow::{anyhow, Context, Result};
 use eframe::egui;
 use image::{DynamicImage, GenericImageView};
-use ipxml_schema::{DecodeSpec, IpxmlApp, InputSpec, OutputSpec, TensorSpec};
+use ipxml_schema::{DecodeSpec, IpxmlApp, InputSpec, ModelInputBinding, OutputSpec, TensorSpec};
 use ipxcs_core::{apply_ops, argmax, softmax, topk_indices, topk_values, Tensor as CoreTensor};
 use ipxml_ui_core::{
     find_input, find_output, input_value_for_spec, output_value_for_spec, InputValue, OutputValue,
@@ -16,17 +16,23 @@ use ort::{
 };
 use rfd::FileDialog;
 
+pub struct ModelEntry {
+    pub id: String,
+    pub bytes: Vec<u8>,
+    pub inputs: Option<Vec<ModelInputBinding>>,
+}
+
 pub struct EguiBackend {
     app: IpxmlApp,
-    model_bytes: Vec<u8>,
+    models: Vec<ModelEntry>,
     labels: HashMap<String, Vec<String>>,
 }
 
 impl EguiBackend {
-    pub fn new(app: IpxmlApp, model_bytes: Vec<u8>, labels: HashMap<String, Vec<String>>) -> Self {
+    pub fn new(app: IpxmlApp, models: Vec<ModelEntry>, labels: HashMap<String, Vec<String>>) -> Self {
         Self {
             app,
-            model_bytes,
+            models,
             labels,
         }
     }
@@ -35,7 +41,7 @@ impl EguiBackend {
 impl UiBackend for EguiBackend {
     fn run(self: Box<Self>, _ctx: UiContext) {
         let app = self.app;
-        let model_bytes = self.model_bytes;
+        let models = self.models;
         let labels = self.labels;
 
         let title = app.name.clone();
@@ -45,7 +51,7 @@ impl UiBackend for EguiBackend {
         eframe::run_native(
             &title,
             native_options,
-            Box::new(|_cc| Box::new(EguiApp::new(app, model_bytes, labels))),
+            Box::new(|_cc| Box::new(EguiApp::new(app, models, labels))),
         )
         .unwrap();
     }
@@ -54,7 +60,7 @@ impl UiBackend for EguiBackend {
 struct EguiApp {
     app: IpxmlApp,
     state: AppState,
-    runner: Option<OnnxRunner>,
+    runner: Option<PipelineRunner>,
     style_applied: bool,
     labels: HashMap<String, Vec<String>>,
 }
@@ -66,7 +72,7 @@ struct AppState {
 }
 
 impl EguiApp {
-    fn new(app: IpxmlApp, model_bytes: Vec<u8>, labels: HashMap<String, Vec<String>>) -> Self {
+    fn new(app: IpxmlApp, models: Vec<ModelEntry>, labels: HashMap<String, Vec<String>>) -> Self {
         let mut inputs = HashMap::new();
         for spec in &app.inputs {
             inputs.insert(spec.id.clone(), input_value_for_spec(spec));
@@ -85,7 +91,7 @@ impl EguiApp {
             status: String::new(),
         };
 
-        let runner = match OnnxRunner::new(model_bytes) {
+        let runner = match PipelineRunner::new(models) {
             Ok(runner) => Some(runner),
             Err(err) => {
                 state.status = format!("Failed to init ONNX runtime: {err}");
@@ -267,7 +273,7 @@ fn run_section(
     ui: &mut egui::Ui,
     app: &IpxmlApp,
     state: &mut AppState,
-    runner: &mut Option<OnnxRunner>,
+    runner: &mut Option<PipelineRunner>,
     labels: &HashMap<String, Vec<String>>,
 ) {
     ui.horizontal(|ui| {
@@ -381,9 +387,15 @@ fn set_output_status(value: &mut OutputValue, status: &str) {
     }
 }
 
-struct OnnxRunner {
+struct PipelineRunner {
+    models: Vec<ModelRunner>,
+}
+
+struct ModelRunner {
+    id: String,
     session: Session,
-    input_meta: Vec<InputMeta>,
+    input_meta: HashMap<String, InputMeta>,
+    input_bindings: Option<Vec<ModelInputBinding>>,
 }
 
 #[derive(Debug, Clone)]
@@ -392,27 +404,40 @@ struct InputMeta {
     shape: Vec<i64>,
 }
 
+impl PipelineRunner {
+    fn new(models: Vec<ModelEntry>) -> Result<Self> {
+        if models.is_empty() {
+            return Err(anyhow!("No models provided"));
+        }
 
-impl OnnxRunner {
-    fn new(model_bytes: Vec<u8>) -> Result<Self> {
-        let mut builder = Session::builder()?;
-        let session = builder
-            .commit_from_memory(&model_bytes)
-            .context("load ONNX model")?;
+        let mut runners = Vec::new();
+        for entry in models {
+            let mut builder = Session::builder()?;
+            let session = builder
+                .commit_from_memory(&entry.bytes)
+                .context("load ONNX model")?;
 
-        let input_meta = session
-            .inputs()
-            .iter()
-            .map(|input| InputMeta {
-                name: input.name().to_string(),
-                shape: outlet_shape(input.dtype()),
-            })
-            .collect();
+            let input_meta = session
+                .inputs()
+                .iter()
+                .map(|input| {
+                    let meta = InputMeta {
+                        name: input.name().to_string(),
+                        shape: outlet_shape(input.dtype()),
+                    };
+                    (meta.name.clone(), meta)
+                })
+                .collect();
 
-        Ok(Self {
-            session,
-            input_meta,
-        })
+            runners.push(ModelRunner {
+                id: entry.id,
+                session,
+                input_meta,
+                input_bindings: entry.inputs,
+            });
+        }
+
+        Ok(Self { models: runners })
     }
 
     fn run(
@@ -421,28 +446,28 @@ impl OnnxRunner {
         inputs: &HashMap<String, InputValue>,
         labels: &HashMap<String, Vec<String>>,
     ) -> Result<HashMap<String, OutputValue>> {
-        let mut input_values: Vec<(String, Tensor<f32>)> = Vec::new();
-        for input in &self.input_meta {
-            let spec = find_input(app, &input.name)
-                .ok_or_else(|| anyhow!("Missing input spec for {}", input.name))?;
-            let value = inputs
-                .get(&input.name)
-                .ok_or_else(|| anyhow!("Missing input value for {}", input.name))?;
-            let tensor = build_input_tensor(input, spec, value)?;
-            input_values.push((input.name.clone(), tensor));
-        }
+        let mut model_outputs: HashMap<(String, String), CoreTensor> = HashMap::new();
 
-        let outputs = self
-            .session
-            .run(input_values)
-            .context("execute ONNX model")?;
+        for model in &mut self.models {
+            let input_values = build_model_inputs(model, app, inputs, &model_outputs)?;
+            let outputs = model
+                .session
+                .run(input_values)
+                .context("execute ONNX model")?;
+
+            for (name, value) in outputs.iter() {
+                let tensor = extract_output_tensor_ref(&value)?;
+                model_outputs.insert((model.id.clone(), name.to_string()), tensor);
+            }
+        }
 
         let mut result = HashMap::new();
         for spec in &app.outputs {
+            let model_id = resolve_output_model_id(spec, &self.models)?;
             let source = spec.source.as_deref().unwrap_or(&spec.id);
-            if let Some(output) = outputs.get(source) {
+            if let Some(tensor) = model_outputs.get(&(model_id.clone(), source.to_string())) {
                 let labels = labels.get(&spec.id);
-                let output_value = process_output(output, spec, labels)?;
+                let output_value = process_output_tensor(tensor.clone(), spec, labels)?;
                 result.insert(spec.id.clone(), output_value);
             } else {
                 let mut value = output_value_for_spec(spec);
@@ -452,6 +477,85 @@ impl OnnxRunner {
         }
 
         Ok(result)
+    }
+}
+
+fn build_model_inputs(
+    model: &ModelRunner,
+    app: &IpxmlApp,
+    inputs: &HashMap<String, InputValue>,
+    model_outputs: &HashMap<(String, String), CoreTensor>,
+) -> Result<Vec<(String, Tensor<f32>)>> {
+    let bindings: Vec<(String, String)> = if let Some(bindings) = &model.input_bindings {
+        bindings
+            .iter()
+            .map(|binding| (binding.name.clone(), binding.source.clone()))
+            .collect()
+    } else {
+        model
+            .input_meta
+            .values()
+            .map(|meta| (meta.name.clone(), meta.name.clone()))
+            .collect()
+    };
+
+    let mut input_values: Vec<(String, Tensor<f32>)> = Vec::new();
+    for (input_name, source) in bindings {
+        if let Some((model_id, output_name)) = parse_model_output_source(&source) {
+            let tensor = model_outputs
+                .get(&(model_id.clone(), output_name.clone()))
+                .ok_or_else(|| {
+                    anyhow!(
+                        "Missing model output '{}:{}' for input '{}'",
+                        model_id,
+                        output_name,
+                        input_name
+                    )
+                })?;
+            let ort_tensor =
+                Tensor::from_array(tensor.clone().into_data()).context("create chained input")?;
+            input_values.push((input_name, ort_tensor));
+        } else {
+            let spec = find_input(app, &source)
+                .ok_or_else(|| anyhow!("Missing input spec for {}", source))?;
+            let value = inputs
+                .get(&source)
+                .ok_or_else(|| anyhow!("Missing input value for {}", source))?;
+            let meta = model
+                .input_meta
+                .get(&input_name)
+                .ok_or_else(|| anyhow!("Missing model input '{}'", input_name))?;
+            let tensor = build_input_tensor(meta, spec, value)?;
+            input_values.push((input_name, tensor));
+        }
+    }
+
+    Ok(input_values)
+}
+
+fn parse_model_output_source(source: &str) -> Option<(String, String)> {
+    let (model_id, output_name) = source.split_once(':')?;
+    if model_id.is_empty() || output_name.is_empty() {
+        None
+    } else {
+        Some((model_id.to_string(), output_name.to_string()))
+    }
+}
+
+fn resolve_output_model_id(spec: &OutputSpec, models: &[ModelRunner]) -> Result<String> {
+    if let Some(model_id) = &spec.model {
+        if models.iter().any(|m| &m.id == model_id) {
+            return Ok(model_id.clone());
+        }
+        return Err(anyhow!("Unknown model id '{}' for output '{}'", model_id, spec.id));
+    }
+    if models.len() == 1 {
+        Ok(models[0].id.clone())
+    } else {
+        Err(anyhow!(
+            "Output '{}' must specify a model when multiple models are present",
+            spec.id
+        ))
     }
 }
 
@@ -644,12 +748,11 @@ fn apply_normalize(tensor: Option<&TensorSpec>, mut array: Array3<f32>) -> Resul
     Ok(array)
 }
 
-fn process_output(
-    output: &ort::value::DynValue,
+fn process_output_tensor(
+    mut tensor: CoreTensor,
     spec: &OutputSpec,
     labels: Option<&Vec<String>>,
 ) -> Result<OutputValue> {
-    let mut tensor = extract_output_tensor(output)?;
     if let Some(ops) = &spec.postprocess {
         tensor = apply_ops(tensor, ops)?;
     }
@@ -665,7 +768,7 @@ enum DecodedOutput {
     Scores(Vec<(usize, f32)>),
 }
 
-fn extract_output_tensor(output: &ort::value::DynValue) -> Result<CoreTensor> {
+fn extract_output_tensor_ref(output: &ort::value::ValueRef<'_>) -> Result<CoreTensor> {
     if let Ok(array) = output.try_extract_array::<f32>() {
         return Ok(CoreTensor::new(array.to_owned()));
     }
@@ -810,6 +913,7 @@ mod tests {
             kind: kind.to_string(),
             tensor: None,
             source: None,
+            model: None,
             postprocess: None,
             labels: None,
             decode: None,

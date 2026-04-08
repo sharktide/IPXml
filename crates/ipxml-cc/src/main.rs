@@ -2,7 +2,7 @@ use std::fs;
 use std::path::PathBuf;
 
 use clap::{Parser, Subcommand};
-use ipxml_bundle::{create_bundle, BundleAsset};
+use ipxml_bundle::{create_bundle, BundleAsset, BundleModel};
 use ipxml_schema::load_ipxml_from_str;
 
 #[derive(Parser)]
@@ -20,9 +20,9 @@ enum Commands {
         /// Path to .ipxml file
         #[arg(long)]
         ipxml: PathBuf,
-        /// Path to ONNX model
+        /// Optional path to ONNX model (single-model apps only)
         #[arg(long)]
-        model: PathBuf,
+        model: Option<PathBuf>,
         /// Output bundle path
         #[arg(long)]
         out: PathBuf,
@@ -36,9 +36,10 @@ fn main() -> anyhow::Result<()> {
         Commands::Cc { ipxml, model, out } => {
             let ipxml_source = fs::read_to_string(&ipxml)?;
             let app = load_ipxml_from_str(&ipxml_source)?;
-            let onnx_bytes = fs::read(&model)?;
-            let assets = collect_assets(&app, ipxml.parent().unwrap_or_else(|| std::path::Path::new(".")))?;
-            create_bundle(out, &app, &ipxml_source, &onnx_bytes, &assets)?;
+            let base_dir = ipxml.parent().unwrap_or_else(|| std::path::Path::new("."));
+            let models = collect_models(&app, base_dir, model.as_ref())?;
+            let assets = collect_assets(&app, base_dir)?;
+            create_bundle(out, &app, &ipxml_source, &models, &assets)?;
             println!("Bundle created.");
         }
     }
@@ -61,4 +62,41 @@ fn collect_assets(app: &ipxml_schema::IpxmlApp, base_dir: &std::path::Path) -> a
         }
     }
     Ok(assets)
+}
+
+fn collect_models(
+    app: &ipxml_schema::IpxmlApp,
+    base_dir: &std::path::Path,
+    model_override: Option<&PathBuf>,
+) -> anyhow::Result<Vec<BundleModel>> {
+    if let Some(models) = &app.models {
+        if models.is_empty() {
+            return Err(anyhow::anyhow!("models is empty"));
+        }
+        let mut out = Vec::new();
+        for model in models {
+            let full_path = base_dir.join(&model.path);
+            let bytes = fs::read(&full_path)?;
+            out.push(BundleModel {
+                path: model.path.clone(),
+                bytes,
+            });
+        }
+        return Ok(out);
+    }
+
+    let Some(model) = &app.model else {
+        return Err(anyhow::anyhow!(
+            "No model defined. Provide `model` or `models` in the schema."
+        ));
+    };
+
+    let model_path = model_override
+        .map(|p| p.to_path_buf())
+        .unwrap_or_else(|| base_dir.join(&model.path));
+    let bytes = fs::read(&model_path)?;
+    Ok(vec![BundleModel {
+        path: model.path.clone(),
+        bytes,
+    }])
 }

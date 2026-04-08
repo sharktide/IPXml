@@ -20,11 +20,17 @@ pub struct BundleAsset {
     pub bytes: Vec<u8>,
 }
 
+#[derive(Debug, Clone)]
+pub struct BundleModel {
+    pub path: String,
+    pub bytes: Vec<u8>,
+}
+
 pub fn create_bundle<P: AsRef<Path>>(
     output: P,
-    app: &IpxmlApp,
+    _app: &IpxmlApp,
     ipxml_source: &str,
-    onnx_bytes: &[u8],
+    models: &[BundleModel],
     assets: &[BundleAsset],
 ) -> Result<(), BundleError> {
     let file = File::create(output)?;
@@ -36,9 +42,11 @@ pub fn create_bundle<P: AsRef<Path>>(
     zip.start_file("app.ipxml", options)?;
     zip.write_all(ipxml_source.as_bytes())?;
 
-    // model
-    zip.start_file(&app.model.path, options)?;
-    zip.write_all(onnx_bytes)?;
+    // models
+    for model in models {
+        zip.start_file(&model.path, options)?;
+        zip.write_all(&model.bytes)?;
+    }
 
     for asset in assets {
         zip.start_file(&asset.path, options)?;

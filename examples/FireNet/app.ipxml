@@ -1,0 +1,9 @@
+name: ClimateStrike AI FireNet
+version: "1.0"
+model:
+  path: FireNet.onnx
+input:
+  - id: Temperature
+    type: number
+    shape: [1, 3, 224, 224]
+    dtype: float32

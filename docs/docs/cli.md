@@ -6,11 +6,13 @@ title: CLI Reference
 ## Commands
 
 ```bash
-ipxml bundle <app.ipxml> -o <output.ipxmodel.import>
+ipxml cc --ipxml <app.ipxml> --model <model.onnx> --out <output.ipxmodel.import>
 ipxml run <bundle.ipxmodel.import>
 ```
 
 ## Flags
 
-- `-o, --output`: bundle output path
+- `--ipxml`: path to `.ipxml`
+- `--model`: path to ONNX model (optional if the schema already defines model paths)
+- `--out`: bundle output path
 - `--help`: usage

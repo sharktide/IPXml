@@ -1,12 +1,15 @@
 /** @type {import('@docusaurus/plugin-content-docs').SidebarsConfig} */
 const sidebars = {
   main: [
-    'intro',
+    'index',
+    'bundles',
     'getting-started',
+    'beginner-guide',
     'schema',
     'preprocess-postprocess',
     'bundles',
     'runtime',
+    'pipelines',
     'ui',
     'cli',
     {

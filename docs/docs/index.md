@@ -1,17 +1,13 @@
 ---
-id: intro
-title: IPXml Overview
-sidebar_label: Overview
+id: index
+title: Start Here
+sidebar_position: 0
 ---
 
-# IPXml
+# IPXml in 3 Minutes
 
-IPXml is a declarative UI + preprocessing format for ONNX models. It lets you package a model, its inputs, preprocessing, outputs, and UI layout in a single bundle and run it with a standalone runtime.
+1. Put your ONNX model next to an `app.ipxml` file.
+2. Run `ipxml cc` to create a bundle.
+3. Run `ipxml run` to launch the UI.
 
-**Core ideas**
-- **Declarative UI**: inputs/outputs and layout are defined in a simple `.ipxml` file.
-- **Pre/Post pipelines**: typed ops and optional expressions power preprocessing and postprocessing.
-- **Portable bundles**: `.ipxmodel.import` is a zip-like bundle containing model + schema + assets.
-- **Runtime UI**: the `ipxml` runtime builds the UI and handles inference.
-
-If you have used Gradio or Streamlit, think of IPXml as the **portable ONNX-first version** that is language-agnostic and fully declarative.
+If you’ve never worked with tensors, go to **Beginner Guide** in the sidebar.

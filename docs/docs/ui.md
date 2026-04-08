@@ -19,6 +19,8 @@ The UI is generated dynamically based on the schema.
 - `image`, `file`, `path`
 - `scores` / `classes` (ranked labels)
 
+You can declare **multiple outputs** and they will render in the order listed in the schema.
+
 ## Layout
 
 ```yaml

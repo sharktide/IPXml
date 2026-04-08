@@ -4,15 +4,32 @@ use serde::{Deserialize, Serialize};
 pub struct IpxmlApp {
     pub name: String,
     pub version: Option<String>,
-    pub model: ModelSpec,
+    #[serde(default)]
+    pub model: Option<ModelSpec>,
+    #[serde(default)]
+    pub models: Option<Vec<ModelSpec>>,
     pub inputs: Vec<InputSpec>,
     pub outputs: Vec<OutputSpec>,
     pub layout: LayoutSpec,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ModelSpec {
+    /// Optional identifier used when multiple models are present.
+    pub id: Option<String>,
     pub path: String, // relative path inside bundle
+    /// Optional explicit input bindings for this model.
+    #[serde(default)]
+    pub inputs: Option<Vec<ModelInputBinding>>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ModelInputBinding {
+    /// Model input name.
+    pub name: String,
+    /// Source identifier. Can be a UI input id or a prior model output in the form
+    /// "model_id:output_name".
+    pub source: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -37,6 +54,8 @@ pub struct OutputSpec {
     pub tensor: Option<TensorSpec>,
     #[serde(default)]
     pub source: Option<String>,
+    #[serde(default)]
+    pub model: Option<String>,
     #[serde(default)]
     pub postprocess: Option<Vec<OpSpec>>,
     #[serde(default)]
