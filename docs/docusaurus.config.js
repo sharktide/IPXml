@@ -10,7 +10,7 @@ const isRTD = process.env.READTHEDOCS === 'True';
 const config = {
   title: 'IPXml',
   tagline: 'Declarative UI + preprocessing for ONNX apps',
-  url: process.env.READTHEDOCS_CANONICAL_URL || 'https://localhost:3000',
+  url: isRTD ? "https://ipxml.readthedocs.io" : 'https://localhost:3000',
   baseUrl: isRTD ? `/${process.env.READTHEDOCS_LANGUAGE}/${process.env.READTHEDOCS_VERSION}/` : '/',
   onBrokenLinks: 'throw',
   favicon: 'img/favicon.ico',
