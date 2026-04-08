@@ -24,6 +24,10 @@ pub struct ModelSpec {
     /// Optional explicit input bindings for this model.
     #[serde(default)]
     pub inputs: Option<Vec<ModelInputBinding>>,
+    #[serde(default)]
+    pub when: Option<String>,
+    #[serde(default)]
+    pub rules: Option<Vec<RuleSpec>>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -42,9 +46,71 @@ pub struct InputSpec {
     #[serde(rename = "type")]
     pub kind: String, // "image", "text", "number", etc.
     #[serde(default)]
+    pub choices: Option<Vec<ChoiceSpec>>,
+    #[serde(default)]
+    pub media: Option<MediaSpec>,
+    /// Optional sub-fields for grouped numeric/vector input.
+    #[serde(default)]
+    pub fields: Option<Vec<NumericFieldSpec>>,
+    #[serde(default)]
+    pub when: Option<String>,
+    #[serde(default)]
+    pub rules: Option<Vec<RuleSpec>>,
+    #[serde(default)]
     pub tensor: Option<TensorSpec>,
     #[serde(default)]
     pub preprocess: Option<Vec<OpSpec>>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct NumericFieldSpec {
+    pub id: String,
+    pub label: String,
+    #[serde(default)]
+    pub default: Option<f64>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ChoiceSpec {
+    pub id: String,
+    pub label: String,
+    #[serde(default)]
+    pub value: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+pub struct MediaSpec {
+    #[serde(default)]
+    pub decode: Option<String>,
+    #[serde(default)]
+    pub sample_rate: Option<u32>,
+    #[serde(default)]
+    pub channels: Option<u16>,
+    #[serde(default)]
+    pub fps: Option<f32>,
+    #[serde(default)]
+    pub max_frames: Option<usize>,
+    #[serde(default)]
+    pub duration_ms: Option<u64>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct RuleSpec {
+    pub if_expr: String,
+    #[serde(default)]
+    pub then: Option<RuleActionSpec>,
+    #[serde(default)]
+    pub otherwise: Option<RuleActionSpec>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+pub struct RuleActionSpec {
+    #[serde(default)]
+    pub visible: Option<bool>,
+    #[serde(default)]
+    pub enabled: Option<bool>,
+    #[serde(default)]
+    pub run: Option<bool>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -53,6 +119,12 @@ pub struct OutputSpec {
     pub label: String,
     #[serde(rename = "type")]
     pub kind: String, // "label", "image", "plot", etc.
+    #[serde(default)]
+    pub media: Option<MediaSpec>,
+    #[serde(default)]
+    pub when: Option<String>,
+    #[serde(default)]
+    pub rules: Option<Vec<RuleSpec>>,
     #[serde(default)]
     pub tensor: Option<TensorSpec>,
     #[serde(default)]
@@ -121,6 +193,16 @@ pub struct TensorLiteral {
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum OpSpec {
+    ApplyIf {
+        #[serde(default)]
+        when: Option<String>,
+        #[serde(default)]
+        rules: Option<Vec<RuleSpec>>,
+        #[serde(rename = "then")]
+        then_ops: Vec<OpSpec>,
+        #[serde(default)]
+        otherwise: Option<Vec<OpSpec>>,
+    },
     Resize {
         width: usize,
         height: usize,

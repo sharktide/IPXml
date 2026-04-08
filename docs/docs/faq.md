@@ -14,3 +14,6 @@ The runtime uses ONNX Runtime for inference. Pre/Post ops in this phase run on C
 
 ## Can I embed this UI?
 Yes. The UI backend is pluggable; current examples use egui.
+
+## I still use `ipxml-cc` / `ipxml-runtime`. Is that okay?
+Yes. They are kept for compatibility. Prefer the unified `ipxml` CLI (`ipxml cc`, `ipxml run`, `ipxml editor`) for new workflows.

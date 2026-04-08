@@ -1,0 +1,42 @@
+name: Multimodal Conditional Demo
+version: "0.1.0"
+model:
+  id: av_model
+  path: model.onnx
+  when: "enable_model == true"
+inputs:
+  - id: enable_model
+    label: Enable Model
+    type: checkbox
+  - id: mode
+    label: Mode
+    type: multiple_choice
+    choices:
+      - id: fast
+        label: Fast
+      - id: full
+        label: Full
+  - id: mic
+    label: Audio Input
+    type: audio
+    media:
+      sample_rate: 16000
+      channels: 1
+  - id: camera
+    label: Video Input
+    type: video
+    when: "mode == \"full\""
+outputs:
+  - id: out_audio
+    label: Audio Output
+    type: audio
+    source: mic
+  - id: out_video
+    label: Video Output
+    type: video
+    source: camera
+layout:
+  rows:
+    - components: [enable_model, mode]
+    - components: [mic, camera]
+    - components: [out_audio, out_video]

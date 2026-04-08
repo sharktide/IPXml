@@ -1,4 +1,4 @@
-use ipxcs_core::{apply_ops, argmax, softmax, topk_indices, Tensor};
+use ipxcs_core::{Tensor, apply_ops, argmax, softmax, topk_indices};
 use ipxml_schema::OpSpec;
 use ndarray::array;
 
@@ -55,8 +55,12 @@ fn test_reshape_transpose_ops() {
     let data = array![[1.0, 2.0], [3.0, 4.0]].into_dyn();
     let tensor = Tensor::new(data);
     let ops = vec![
-        OpSpec::Reshape { shape: vec![1, 2, 2] },
-        OpSpec::Transpose { axes: vec![0, 2, 1] },
+        OpSpec::Reshape {
+            shape: vec![1, 2, 2],
+        },
+        OpSpec::Transpose {
+            axes: vec![0, 2, 1],
+        },
     ];
     let out = apply_ops(tensor, &ops).unwrap();
     assert_eq!(out.data.shape(), &[1, 2, 2]);
@@ -69,7 +73,9 @@ fn test_reshape_transpose_ops() {
 fn test_expr_scale() {
     let data = array![1.0, 2.0].into_dyn();
     let tensor = Tensor::new(data);
-    let ops = vec![OpSpec::Expr { code: "scale(x, 2.0)".to_string() }];
+    let ops = vec![OpSpec::Expr {
+        code: "scale(x, 2.0)".to_string(),
+    }];
     let out = apply_ops(tensor, &ops).unwrap();
     let values: Vec<f32> = out.data.iter().copied().collect();
     assert!(approx_eq(values[0], 2.0));

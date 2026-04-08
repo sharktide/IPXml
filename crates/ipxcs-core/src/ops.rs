@@ -1,5 +1,5 @@
-use anyhow::{anyhow, Context, Result};
-use ipxml_schema::{OpSpec, TensorLiteral};
+use anyhow::{Context, Result, anyhow};
+use ipxml_schema::{OpSpec, RuleSpec, TensorLiteral};
 use ndarray::{Array3, Array4, ArrayD, Axis, Ix2, Ix3, Ix4, IxDyn, Zip};
 use rhai::{Engine, EvalAltResult, Scope};
 
@@ -22,6 +22,20 @@ pub fn apply_ops(mut tensor: Tensor, ops: &[OpSpec]) -> Result<Tensor> {
 
 pub fn apply_op(tensor: Tensor, op: &OpSpec) -> Result<Tensor> {
     match op {
+        OpSpec::ApplyIf {
+            when,
+            rules,
+            then_ops,
+            otherwise,
+        } => {
+            if evaluate_condition(when.as_deref(), rules.as_deref()) {
+                apply_ops(tensor, then_ops)
+            } else if let Some(otherwise_ops) = otherwise {
+                apply_ops(tensor, otherwise_ops)
+            } else {
+                Ok(tensor)
+            }
+        }
         OpSpec::Resize {
             width,
             height,
@@ -44,7 +58,9 @@ pub fn apply_op(tensor: Tensor, op: &OpSpec) -> Result<Tensor> {
         OpSpec::Unsqueeze { axes } => unsqueeze(tensor, axes),
         OpSpec::Softmax { axis } => softmax(&tensor, *axis),
         OpSpec::ArgMax { axis } => argmax(&tensor, *axis),
-        OpSpec::TopK { k, axis, largest } => topk_values(&tensor, *k, *axis, largest.unwrap_or(true)),
+        OpSpec::TopK { k, axis, largest } => {
+            topk_values(&tensor, *k, *axis, largest.unwrap_or(true))
+        }
         OpSpec::MatMul { rhs } => matmul(tensor, rhs),
         OpSpec::Add { value, tensor: rhs } => binary_op(tensor, value, rhs, |a, b| a + b),
         OpSpec::Mul { value, tensor: rhs } => binary_op(tensor, value, rhs, |a, b| a * b),
@@ -57,13 +73,35 @@ pub fn apply_op(tensor: Tensor, op: &OpSpec) -> Result<Tensor> {
     }
 }
 
+fn evaluate_condition(when: Option<&str>, rules: Option<&[RuleSpec]>) -> bool {
+    if let Some(expr) = when {
+        return eval_bool(expr);
+    }
+    if let Some(rules) = rules {
+        for rule in rules {
+            if eval_bool(&rule.if_expr) {
+                return rule.then.as_ref().and_then(|a| a.run).unwrap_or(true);
+            }
+            if let Some(otherwise) = &rule.otherwise {
+                if let Some(run) = otherwise.run {
+                    return run;
+                }
+            }
+        }
+    }
+    true
+}
+
+fn eval_bool(expr: &str) -> bool {
+    let engine = Engine::new();
+    engine.eval_expression::<bool>(expr).unwrap_or(false)
+}
+
 pub fn softmax(tensor: &Tensor, axis: Option<isize>) -> Result<Tensor> {
     let axis = normalize_axis(axis.unwrap_or(-1), tensor.ndim())?;
     let mut data = tensor.data.clone();
     for mut lane in data.lanes_mut(Axis(axis)) {
-        let max = lane
-            .iter()
-            .fold(f32::NEG_INFINITY, |acc, v| acc.max(*v));
+        let max = lane.iter().fold(f32::NEG_INFINITY, |acc, v| acc.max(*v));
         let mut sum = 0.0;
         lane.mapv_inplace(|v| {
             let e = (v - max).exp();
@@ -92,7 +130,12 @@ pub fn argmax(tensor: &Tensor, axis: Option<isize>) -> Result<Tensor> {
     Ok(Tensor::new(data))
 }
 
-pub fn topk_values(tensor: &Tensor, k: usize, axis: Option<isize>, largest: bool) -> Result<Tensor> {
+pub fn topk_values(
+    tensor: &Tensor,
+    k: usize,
+    axis: Option<isize>,
+    largest: bool,
+) -> Result<Tensor> {
     let axis = normalize_axis(axis.unwrap_or(-1), tensor.ndim())?;
     let mut output = Vec::new();
     for lane in tensor.data.lanes(Axis(axis)) {
@@ -109,8 +152,7 @@ pub fn topk_values(tensor: &Tensor, k: usize, axis: Option<isize>, largest: bool
     if axis < shape.len() {
         shape[axis] = k;
     }
-    let array = ArrayD::from_shape_vec(IxDyn(&shape), output)
-        .context("topk reshape")?;
+    let array = ArrayD::from_shape_vec(IxDyn(&shape), output).context("topk reshape")?;
     Ok(Tensor::new(array))
 }
 
@@ -165,27 +207,20 @@ pub fn eval_expr(tensor: Tensor, code: &str) -> Result<Tensor> {
             matmul_tensor(a, b).map_err(to_rhai_err)
         },
     );
-    engine.register_fn(
-        "sum",
-        |t: Tensor| -> Result<Tensor, Box<EvalAltResult>> {
-            reduce_sum(t, None, false).map_err(to_rhai_err)
-        },
-    );
-    engine.register_fn(
-        "mean",
-        |t: Tensor| -> Result<Tensor, Box<EvalAltResult>> {
-            reduce_mean(t, None, false).map_err(to_rhai_err)
-        },
-    );
-    engine.register_fn(
-        "std",
-        |t: Tensor| -> Result<Tensor, Box<EvalAltResult>> {
-            reduce_std(t, None, false).map_err(to_rhai_err)
-        },
-    );
+    engine.register_fn("sum", |t: Tensor| -> Result<Tensor, Box<EvalAltResult>> {
+        reduce_sum(t, None, false).map_err(to_rhai_err)
+    });
+    engine.register_fn("mean", |t: Tensor| -> Result<Tensor, Box<EvalAltResult>> {
+        reduce_mean(t, None, false).map_err(to_rhai_err)
+    });
+    engine.register_fn("std", |t: Tensor| -> Result<Tensor, Box<EvalAltResult>> {
+        reduce_std(t, None, false).map_err(to_rhai_err)
+    });
     engine.register_fn(
         "softmax",
-        |t: Tensor| -> Result<Tensor, Box<EvalAltResult>> { softmax(&t, None).map_err(to_rhai_err) },
+        |t: Tensor| -> Result<Tensor, Box<EvalAltResult>> {
+            softmax(&t, None).map_err(to_rhai_err)
+        },
     );
     engine.register_fn(
         "argmax",
@@ -202,7 +237,11 @@ pub fn eval_expr(tensor: Tensor, code: &str) -> Result<Tensor> {
     });
     engine.register_fn(
         "normalize",
-        |t: Tensor, mean: rhai::Array, std: rhai::Array, scale: f64| -> Result<Tensor, Box<EvalAltResult>> {
+        |t: Tensor,
+         mean: rhai::Array,
+         std: rhai::Array,
+         scale: f64|
+         -> Result<Tensor, Box<EvalAltResult>> {
             normalize(
                 t,
                 Some(scale as f32),
@@ -329,7 +368,10 @@ fn squeeze(tensor: Tensor, axes: Option<&[usize]>) -> Result<Tensor> {
         axes.sort_unstable_by(|a, b| b.cmp(a));
         for axis in axes {
             if axis >= shape.len() || shape[axis] != 1 {
-                return Err(anyhow!("Cannot squeeze axis {axis} with size {}", shape.get(axis).unwrap_or(&0)));
+                return Err(anyhow!(
+                    "Cannot squeeze axis {axis} with size {}",
+                    shape.get(axis).unwrap_or(&0)
+                ));
             }
             shape.remove(axis);
         }
@@ -350,7 +392,10 @@ fn unsqueeze(tensor: Tensor, axes: &[usize]) -> Result<Tensor> {
     axes.sort_unstable();
     for axis in axes {
         if axis > shape.len() {
-            return Err(anyhow!("Cannot unsqueeze axis {axis} for shape {:?}", shape));
+            return Err(anyhow!(
+                "Cannot unsqueeze axis {axis} for shape {:?}",
+                shape
+            ));
         }
         shape.insert(axis, 1);
     }
@@ -403,12 +448,7 @@ fn reduce_std(tensor: Tensor, axis: Option<isize>, keepdims: bool) -> Result<Ten
     })
 }
 
-fn reduce_axis<F>(
-    tensor: Tensor,
-    axis: Option<isize>,
-    keepdims: bool,
-    op: F,
-) -> Result<Tensor>
+fn reduce_axis<F>(tensor: Tensor, axis: Option<isize>, keepdims: bool, op: F) -> Result<Tensor>
 where
     F: FnOnce(ArrayD<f32>, usize) -> Result<ArrayD<f32>>,
 {
@@ -484,20 +524,16 @@ where
                 .broadcast(lhs_broadcast.raw_dim())
                 .ok_or_else(|| anyhow!("Broadcast shapes not compatible"))?;
             let mut out = lhs_broadcast.to_owned();
-            Zip::from(&mut out)
-                .and(&rhs_broadcast)
-                .for_each(|a, b| {
-                    *a = op(*a, *b);
-                });
+            Zip::from(&mut out).and(&rhs_broadcast).for_each(|a, b| {
+                *a = op(*a, *b);
+            });
             return Ok(Tensor::new(out));
         }
         if let Some(rhs_broadcast) = rhs_tensor.data.broadcast(tensor.data.raw_dim()) {
             let mut out = tensor.data.clone();
-            Zip::from(&mut out)
-                .and(&rhs_broadcast)
-                .for_each(|a, b| {
-                    *a = op(*a, *b);
-                });
+            Zip::from(&mut out).and(&rhs_broadcast).for_each(|a, b| {
+                *a = op(*a, *b);
+            });
             return Ok(Tensor::new(out));
         }
         return Err(anyhow!("Broadcast shapes not compatible"));
@@ -548,7 +584,12 @@ fn resize(tensor: Tensor, width: usize, height: usize, layout: Option<&str>) -> 
     }
 }
 
-fn center_crop(tensor: Tensor, width: usize, height: usize, layout: Option<&str>) -> Result<Tensor> {
+fn center_crop(
+    tensor: Tensor,
+    width: usize,
+    height: usize,
+    layout: Option<&str>,
+) -> Result<Tensor> {
     let layout = infer_layout(tensor.shape(), layout);
     match layout {
         ImageLayout::Hwc => {
@@ -561,11 +602,15 @@ fn center_crop(tensor: Tensor, width: usize, height: usize, layout: Option<&str>
         }
         ImageLayout::Nhwc => {
             let data = tensor.data.into_dimensionality::<Ix4>()?;
-            Ok(Tensor::new(center_crop_nhwc(data, width, height).into_dyn()))
+            Ok(Tensor::new(
+                center_crop_nhwc(data, width, height).into_dyn(),
+            ))
         }
         ImageLayout::Nchw => {
             let data = tensor.data.into_dimensionality::<Ix4>()?;
-            Ok(Tensor::new(center_crop_nchw(data, width, height).into_dyn()))
+            Ok(Tensor::new(
+                center_crop_nchw(data, width, height).into_dyn(),
+            ))
         }
     }
 }

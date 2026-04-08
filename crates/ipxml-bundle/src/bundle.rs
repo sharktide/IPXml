@@ -4,7 +4,7 @@ use std::path::Path;
 
 use ipxml_schema::IpxmlApp;
 use thiserror::Error;
-use zip::{write::FileOptions, ZipWriter};
+use zip::{ZipWriter, write::FileOptions};
 
 #[derive(Debug, Error)]
 pub enum BundleError {
