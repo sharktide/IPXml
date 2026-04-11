@@ -3,6 +3,15 @@ name = "ipxml-cc"
 version = "0.1.0"
 edition = "2024"
 
+[package.metadata.bundle]
+name = "IPXml Compiler"
+identifier = "com.ipxml.cc"
+version = "0.1.0"
+copyright = "Copyright (c) Rihaan Meher, 2026"
+category = "DeveloperTool"
+short_description = "IPXml AI model compiler"
+long_description = "Compiler for IPXml declarative AI deployment schemas"
+
 [dependencies]
 clap = { version = "4", features = ["derive"] }
 ipxml-schema = { path = "../ipxml-schema" }

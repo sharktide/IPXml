@@ -70,14 +70,46 @@ jobs:
         run: |
           # Install packaging tools
           cargo install cargo-bundle
-          # Bundle into .pkg and .dmg
-          cargo bundle --target x86_64-apple-darwin --release
+          cargo install apple-codesign
+          # Bundle each crate
+          cd crates/ipxml-cc
+          cargo bundle --release
+          cd ../ipxml-runtime
+          cargo bundle --release --bin ipxml
+          cargo bundle --release --bin ipxml-runtime
+          cd ../..
+          # Import certificates for codesigning
+          echo "$DEVELOPER_APP_CERT" | base64 --decode > developer_app_cert.p12
+          echo "$INSTALLER_CERT" | base64 --decode > installer_cert.p12
+          security create-keychain -p "$DEVELOPER_APP_CERT_KEY" build.keychain
+          security default-keychain -s build.keychain
+          security unlock-keychain -p "$DEVELOPER_APP_CERT_KEY" build.keychain
+          security import developer_app_cert.p12 -k build.keychain -P "$DEVELOPER_APP_CERT_KEY" -T /usr/bin/codesign
+          security import installer_cert.p12 -k build.keychain -P "$INSTALLER_CERT_KEY" -T /usr/bin/codesign
+          # Sign the app bundles
+          rcodesign sign --keychain build.keychain crates/ipxml-cc/target/release/bundle/osx/IPXml\ Compiler.app
+          rcodesign sign --keychain build.keychain crates/ipxml-runtime/target/release/bundle/osx/IPXml\ Runtime.app
+          # Create DMG
+          brew install create-dmg
+          mkdir -p dist/macos
+          cp -r crates/ipxml-cc/target/release/bundle/osx/IPXml\ Compiler.app dist/macos/
+          cp -r crates/ipxml-runtime/target/release/bundle/osx/IPXml\ Runtime.app dist/macos/
+          cd dist/macos
+          create-dmg --volname "IPXml" --window-pos 200 120 --window-size 800 400 --icon-size 100 --app-drop-link 600 185 "IPXml.dmg" .
+          cd ../..
+          # Sign DMG
+          rcodesign sign --keychain build.keychain dist/macos/IPXml.dmg
           # Zip for unpackaged use
           mkdir -p dist/macos
           for bin in $BINARIES; do
             cp target/release/$bin dist/macos/
           done
           cd dist/macos && zip -r ../ipxml_macos_unpacked.zip *
+        env:
+          DEVELOPER_APP_CERT: ${{ secrets.DEVELOPER_APP_CERT }}
+          DEVELOPER_APP_CERT_KEY: ${{ secrets.DEVELOPER_APP_CERT_KEY }}
+          INSTALLER_CERT: ${{ secrets.INSTALLER_CERT }}
+          INSTALLER_CERT_KEY: ${{ secrets.INSTALLER_CERT_KEY }}
 
       - name: Upload installer artifacts
         uses: actions/upload-artifact@v4
@@ -90,5 +122,5 @@ jobs:
             dist/*.tar.gz
             dist/*.appimage
             dist/*.deb
-            dist/*.pkg
-            dist/*.dmg
+            crates/*/target/release/bundle/osx/*.app
+            dist/macos/*.dmg
