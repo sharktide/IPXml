@@ -34,9 +34,6 @@ jobs:
       - name: Build
         run: cargo build --release
 
-      - name: Install WiX v4
-        run: choco install wixtoolset -y
-
       - name: Prepare files
         shell: bash
         run: |
