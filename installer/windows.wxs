@@ -18,10 +18,9 @@
 
     <Feature Id="AddToPathFeature"
              Title="Add IPXml to PATH"
-             Description="Adds IPXml to system PATH"
+             Description="Adds IPXml to system PATH (Recommended)"
              Level="1"
-             AllowAdvertise="no"
-             Absent="allow">
+             AllowAdvertise="no">
       <ComponentRef Id="AddToPath"/>
     </Feature>
 
@@ -50,10 +49,6 @@
         <File Source="dist/win/ipxml-cc.exe" />
       </Component>
 
-      <Component Id="ipxmlrtExe" Guid="*">
-        <File Source="dist/win/ipxml-runtime.exe" />
-      </Component>
-
     </ComponentGroup>
   </Fragment>
 
@@ -61,7 +56,7 @@
   <!-- Add to PATH -->
   <Fragment>
     <DirectoryRef Id="BIN">
-      <Component Id="AddToPath" Guid="*">
+      <Component Id="AddToPath" Guid="9765e1ee-78e3-4096-9187-d1f878c3bf10">
         
         <Environment
             Id="AddToPathEnv"
