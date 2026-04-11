@@ -7,7 +7,7 @@
       UpgradeCode="a2e569a0-5a99-4209-a4ce-bd6b01c3cb53"
       InstallerVersion="500">
 
-    <MediaTemplate />
+    <MediaTemplate EmbedCab="yes" />
 
     <MajorUpgrade DowngradeErrorMessage="A newer version of IPXml is already installed." />
 
