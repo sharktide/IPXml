@@ -23,7 +23,14 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
-
+      
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10'
+    
+      - name: Install WiX Toolset
+        run: dotnet tool install --global WiX
+    
       - name: Build
         run: cargo build --release
 
@@ -111,20 +118,32 @@ jobs:
           security default-keychain -s build.keychain
           security unlock-keychain -p "" build.keychain
 
-          security import app.p12 -k build.keychain -P "$CERT_PASSWORD" -T /usr/bin/codesign
-          security import installer.p12 -k build.keychain -P "$CERT_PASSWORD" -T /usr/bin/productsign
+          security import app.p12 \
+            -k build.keychain \
+            -P "$CERT_PASSWORD" \
+            -T /usr/bin/codesign \
+            -T /usr/bin/security
+
+          security import installer.p12 \
+            -k build.keychain \
+            -P "$CERT_PASSWORD" \
+            -T /usr/bin/productsign \
+            -T /usr/bin/security
+
+          security set-key-partition-list \
+           -S apple-tool:,apple: \
+           -s -k "" build.keychain
 
       - name: Codesign binaries
         run: |
           codesign --sign "$DEVELOPER_ID_APP" --timestamp --options runtime pkgroot/usr/local/bin/ipxml
           codesign --sign "$DEVELOPER_ID_APP" --timestamp --options runtime pkgroot/usr/local/bin/ipxml-cc
-          codesign --sign "$DEVELOPER_ID_APP" --timestamp --options runtime pkgroot/usr/local/bin/ipxml-runtime
 
       - name: Build pkg
         run: |
           pkgbuild \
             --root pkgroot \
-            --identifier com.ipxml.runtime \
+            --identifier com.ipxml.pkg \
             --version $VERSION \
             --install-location / \
             ipxml.pkg
