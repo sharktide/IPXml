@@ -1,0 +1,52 @@
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Package Name="IPXml"
+           Manufacturer="Rihaan Meherr"
+           Version="1.0.0"
+           UpgradeCode="a2e569a0-5a99-4209-a4ce-bd6b01c3cb53">
+
+    <MediaTemplate />
+
+    <Feature Id="MainFeature" Title="IPXml" Level="1">
+      <ComponentGroupRef Id="ProductComponents"/>
+      <ComponentRef Id="AddToPath"/>
+    </Feature>
+
+    <Feature Id="AddToPathFeature" Title="Add to PATH" Level="1">
+      <ComponentRef Id="AddToPath"/>
+    </Feature>
+
+  </Package>
+
+  <Fragment>
+    <Directory Id="ProgramFilesFolder">
+      <Directory Id="INSTALLFOLDER" Name="IPXml">
+        <Directory Id="BIN" Name="bin"/>
+      </Directory>
+    </Directory>
+  </Fragment>
+
+  <Fragment>
+    <ComponentGroup Id="ProductComponents" Directory="BIN">
+      <Component Id="ipxmlExe" Guid="*">
+        <File Source="dist/win/ipxml.exe"/>
+      </Component>
+      <Component Id="ipxmlccExe" Guid="*">
+        <File Source="dist/win/ipxml-cc.exe"/>
+      </Component>
+      <Component Id="ipxmlrtExe" Guid="*">
+        <File Source="dist/win/ipxml-runtime.exe"/>
+      </Component>
+    </Component>
+  </Fragment>
+
+  <Fragment>
+    <Component Id="AddToPath" Guid="*">
+      <Environment Id="PATH"
+                   Name="PATH"
+                   Value="[BIN]"
+                   Action="set"
+                   Part="last"
+                   System="yes"/>
+    </Component>
+  </Fragment>
+</Wix>

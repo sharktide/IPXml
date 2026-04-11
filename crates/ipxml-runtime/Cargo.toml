@@ -1,24 +1,20 @@
 [package]
 name = "ipxml-runtime"
-version = "0.1.0"
+version = "1.0.0"
 edition = "2024"
 
 [[bin]]
 name = "ipxml"
 path = "src/main.rs"
 
-[[bin]]
-name = "ipxml-runtime"
-path = "src/main.rs"
-
 [package.metadata.bundle]
 name = "IPXml Runtime"
 identifier = "com.ipxml.runtime"
-version = "0.1.0"
+version = "1.0.0"
 copyright = "Copyright (c) Rihaan Meher 2026"
 category = "DeveloperTool"
 short_description = "IPXml AI model runtime"
-long_description = "Runtime for executing IPXml declarative AI deployment schemas"
+long_description = "Runtime for executing and compiling IPXml declarative AI deployment schemas"
 
 [dependencies]
 clap = { version = "4", features = ["derive"] }

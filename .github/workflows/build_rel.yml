@@ -1,126 +1,153 @@
-# GitHub Actions workflow to build a Rust cargo project in release mode
-# and create installers for the three binaries: ipxml, ipxml‑cc, and ipxml‑runtime.
-# Installers are generated for Windows, Linux, and macOS with platform‑specific formats.
-name: Build & Package Cargo Project
+name: Build & Package (Native Installers)
 
 on:
   push:
     branches: [ main ]
   pull_request:
-    branches: [ main ]
+
+env:
+  APP_NAME: ipxml
+  VERSION: 1.0.0
+  BINARIES: "ipxml ipxml-cc"
+  DEVELOPER_ID_APP_CERT: ${{ secrets.DEVELOPER_APP_CERT }}
+  DEVELOPER_ID_INSTALLER_CERT: ${{ secrets.INSTALLER_CERT }}
+  DEVELOPER_ID_APP: 
+  CERT_PASSWORD: ${{ secrets.DEVELOPER_APP_CERT_KEY }}
 
 jobs:
-  build_and_package:
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        os: [ windows-latest, ubuntu-latest, macos-latest ]
-    env:
-      # Set Rust toolchain version
-      RUST_TOOLCHAIN: stable
-      # Binaries to package
-      BINARIES: ipxml ipxml-cc ipxml-runtime
+
+  windows:
+    runs-on: windows-latest
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Build in release mode
-        run: cargo build --release --all-features
+      - name: Build
+        run: cargo build --release
 
-      - name: Create installers (Windows)
-        if: ${{ matrix.os == 'windows-latest' }}
+      - name: Install WiX v4
+        run: choco install wixtoolset --version=4.0.4 -y
+
+      - name: Prepare files
         shell: bash
         run: |
-          # Install installer tools
-          cargo install cargo-wix
-          cargo install cargo-inno
-          # Build the MSI installer using cargo-wix
-          cargo wix --no-build --source target/release
-          # Build an EXE installer using Inno Setup
-          cargo inno --source target/release
-          # Zip the binaries for unpackaged use
-          mkdir -p dist/windows
-          for bin in $BINARIES; do
-            cp target/release/$bin.exe dist/windows/
-          done
-          cd dist/windows && zip -r ../ipxml_windows_unpacked.zip *
+          mkdir -p dist/win
+          cp target/release/*.exe dist/win/
 
-      - name: Create installers (Linux)
-        if: ${{ matrix.os == 'ubuntu-latest' }}
-        shell: bash
+      - name: Build MSI
         run: |
-          # Install packaging tools
-          cargo install cargo-deb
-          cargo install cargo-appimage
-          # Debian package
-          cargo deb --no-build --source target/release
-          # AppImage
-          cargo appimage --no-build --source target/release
-          # Tar.gz for unpackaged use
-          mkdir -p dist/linux
-          for bin in $BINARIES; do
-            cp target/release/$bin dist/linux/
-          done
-          cd dist/linux && tar -czf ../ipxml_linux_unpacked.tar.gz *
+          wix build installer/windows.wxs -o ipxml.msi
 
-      - name: Create installers (macOS)
-        if: ${{ matrix.os == 'macos-latest' }}
-        shell: bash
-        run: |
-          # Install packaging tools
-          cargo install cargo-bundle
-          cargo install apple-codesign
-          # Bundle each crate
-          cd crates/ipxml-cc
-          cargo bundle --release
-          cd ../ipxml-runtime
-          cargo bundle --release --bin ipxml
-          cargo bundle --release --bin ipxml-runtime
-          cd ../..
-          # Import certificates for codesigning
-          echo "$DEVELOPER_APP_CERT" | base64 --decode > developer_app_cert.p12
-          echo "$INSTALLER_CERT" | base64 --decode > installer_cert.p12
-          security create-keychain -p "$DEVELOPER_APP_CERT_KEY" build.keychain
-          security default-keychain -s build.keychain
-          security unlock-keychain -p "$DEVELOPER_APP_CERT_KEY" build.keychain
-          security import developer_app_cert.p12 -k build.keychain -P "$DEVELOPER_APP_CERT_KEY" -T /usr/bin/codesign
-          security import installer_cert.p12 -k build.keychain -P "$INSTALLER_CERT_KEY" -T /usr/bin/codesign
-          # Sign the app bundles
-          rcodesign sign --keychain build.keychain crates/ipxml-cc/target/release/bundle/osx/IPXml\ Compiler.app
-          rcodesign sign --keychain build.keychain crates/ipxml-runtime/target/release/bundle/osx/IPXml\ Runtime.app
-          # Create DMG
-          brew install create-dmg
-          mkdir -p dist/macos
-          cp -r crates/ipxml-cc/target/release/bundle/osx/IPXml\ Compiler.app dist/macos/
-          cp -r crates/ipxml-runtime/target/release/bundle/osx/IPXml\ Runtime.app dist/macos/
-          cd dist/macos
-          create-dmg --volname "IPXml" --window-pos 200 120 --window-size 800 400 --icon-size 100 --app-drop-link 600 185 "IPXml.dmg" .
-          cd ../..
-          # Sign DMG
-          rcodesign sign --keychain build.keychain dist/macos/IPXml.dmg
-          # Zip for unpackaged use
-          mkdir -p dist/macos
-          for bin in $BINARIES; do
-            cp target/release/$bin dist/macos/
-          done
-          cd dist/macos && zip -r ../ipxml_macos_unpacked.zip *
-        env:
-          DEVELOPER_APP_CERT: ${{ secrets.DEVELOPER_APP_CERT }}
-          DEVELOPER_APP_CERT_KEY: ${{ secrets.DEVELOPER_APP_CERT_KEY }}
-          INSTALLER_CERT: ${{ secrets.INSTALLER_CERT }}
-          INSTALLER_CERT_KEY: ${{ secrets.INSTALLER_CERT_KEY }}
-
-      - name: Upload installer artifacts
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.os }}-binaries
-          path: |
-            target/*.msi
-            target/*.exe
-            dist/*.zip
-            dist/*.tar.gz
-            dist/*.appimage
-            dist/*.deb
-            crates/*/target/release/bundle/osx/*.app
-            dist/macos/*.dmg
+          name: windows-msi
+          path: ipxml.msi
+
+  linux:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build
+        run: cargo build --release
+
+      - name: Install fpm
+        run: sudo gem install fpm
+
+      - name: Prepare package root
+        run: |
+          mkdir -p pkgroot/opt/ipxml/bin
+          cp target/release/ipxml pkgroot/opt/ipxml/bin/
+          cp target/release/ipxml-cc pkgroot/opt/ipxml/bin/
+          cp target/release/ipxml-runtime pkgroot/opt/ipxml/bin/
+
+      - name: Create postinstall script
+        run: |
+          mkdir -p scripts
+          cat << 'EOF' > scripts/postinstall.sh
+          #!/bin/bash
+          ln -sf /opt/ipxml/bin/ipxml /usr/local/bin/ipxml
+          ln -sf /opt/ipxml/bin/ipxml-cc /usr/local/bin/ipxml-cc
+          ln -sf /opt/ipxml/bin/ipxml-runtime /usr/local/bin/ipxml-runtime
+          EOF
+          chmod +x scripts/postinstall.sh
+
+      - name: Build .deb
+        run: |
+          fpm -s dir -t deb \
+            -n ipxml \
+            -v $VERSION \
+            --prefix / \
+            --after-install scripts/postinstall.sh \
+            pkgroot/=/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-deb
+          path: "*.deb"
+
+  macos:
+    runs-on: macos-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build
+        run: cargo build --release
+
+      - name: Prepare pkg root
+        run: |
+          mkdir -p pkgroot/usr/local/bin
+          cp target/release/ipxml pkgroot/usr/local/bin/
+          cp target/release/ipxml-cc pkgroot/usr/local/bin/
+          cp target/release/ipxml-runtime pkgroot/usr/local/bin/
+
+      - name: Import certificates
+        run: |
+          echo "$DEVELOPER_ID_APP_CERT" | base64 --decode > app.p12
+          echo "$DEVELOPER_ID_INSTALLER_CERT" | base64 --decode > installer.p12
+
+          security create-keychain -p "" build.keychain
+          security default-keychain -s build.keychain
+          security unlock-keychain -p "" build.keychain
+
+          security import app.p12 -k build.keychain -P "$CERT_PASSWORD" -T /usr/bin/codesign
+          security import installer.p12 -k build.keychain -P "$CERT_PASSWORD" -T /usr/bin/productsign
+
+      - name: Codesign binaries
+        run: |
+          codesign --sign "$DEVELOPER_ID_APP" --timestamp --options runtime pkgroot/usr/local/bin/ipxml
+          codesign --sign "$DEVELOPER_ID_APP" --timestamp --options runtime pkgroot/usr/local/bin/ipxml-cc
+          codesign --sign "$DEVELOPER_ID_APP" --timestamp --options runtime pkgroot/usr/local/bin/ipxml-runtime
+
+      - name: Build pkg
+        run: |
+          pkgbuild \
+            --root pkgroot \
+            --identifier com.example.ipxml \
+            --version $VERSION \
+            --install-location / \
+            ipxml.pkg
+
+      - name: Sign pkg
+        run: |
+          productsign \
+            --sign "$DEVELOPER_ID_INSTALLER" \
+            ipxml.pkg ipxml-signed.pkg
+
+      - name: Notarize
+        run: |
+          xcrun notarytool submit ipxml-signed.pkg \
+            --apple-id "$APPLE_ID" \
+            --team-id "$APPLE_TEAM_ID" \
+            --password "$APPLE_APP_PASSWORD" \
+            --wait
+
+      - name: Staple
+        run: xcrun stapler staple ipxml-signed.pkg
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-pkg
+          path: ipxml-signed.pkg
