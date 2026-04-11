@@ -1,0 +1,109 @@
+# GitHub Actions workflow to build a Rust cargo project in release mode
+# and create installers for the three binaries: ipxml, ipxml‑cc, and ipxml‑runtime.
+# Installers are generated for Windows, Linux, and macOS with platform‑specific formats.
+name: Build & Package Cargo Project
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build_and_package:
+    runs-on: <span data-color="blue">${{ matrix.os }}</span>
+    strategy:
+      matrix:
+        os: [ windows-latest, ubuntu-latest, macos-latest ]
+    env:
+      # Set Rust toolchain version
+      RUST_TOOLCHAIN: stable
+      # Binaries to package
+      BINARIES: ipxml ipxml-cc ipxml-runtime
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: actions/setup-rust@v2
+        with:
+          rust-version: ${{ env.RUST_TOOLCHAIN }}
+
+      - name: Cache Cargo registry and git
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Build in release mode
+        run: cargo build --release --all-features
+
+      - name: Create installers (Windows)
+        if: ${{ matrix.os == 'windows-latest' }}
+        shell: bash
+        run: |
+          # Install installer tools
+          cargo install cargo-wix
+          cargo install cargo-inno
+          # Build the MSI installer using cargo-wix
+          cargo wix --quiet --no-build --source target/release
+          # Build an EXE installer using Inno Setup
+          cargo inno --quiet --source target/release
+          # Zip the binaries for unpackaged use
+          mkdir -p dist/windows
+          for bin in $BINARIES; do
+            cp target/release/$bin.exe dist/windows/
+          done
+          cd dist/windows && zip -r ../ipxml_windows_unpacked.zip *
+
+      - name: Create installers (Linux)
+        if: ${{ matrix.os == 'ubuntu-latest' }}
+        shell: bash
+        run: |
+          # Install packaging tools
+          cargo install cargo-deb
+          cargo install cargo-appimage
+          # Debian package
+          cargo deb --quiet --no-build --source target/release
+          # AppImage
+          cargo appimage --quiet --no-build --source target/release
+          # Tar.gz for unpackaged use
+          mkdir -p dist/linux
+          for bin in $BINARIES; do
+            cp target/release/$bin dist/linux/
+          done
+          cd dist/linux && tar -czf ../ipxml_linux_unpacked.tar.gz *
+
+      - name: Create installers (macOS)
+        if: ${{ matrix.os == 'macos-latest' }}
+        shell: bash
+        run: |
+          # Install packaging tools
+          cargo install cargo-bundle
+          # Bundle into .pkg and .dmg
+          cargo bundle --quiet --target x86_64-apple-darwin --release
+          # Zip for unpackaged use
+          mkdir -p dist/macos
+          for bin in $BINARIES; do
+            cp target/release/$bin dist/macos/
+          done
+          cd dist/macos && zip -r ../ipxml_macos_unpacked.zip *
+
+      - name: Upload installer artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.os }}-binaries
+          path: |
+            target/*.msi
+            target/*.exe
+            dist/*.zip
+            dist/*.tar.gz
+            dist/*.appimage
+            dist/*.deb
+            dist/*.pkg
+            dist/*.dmg
