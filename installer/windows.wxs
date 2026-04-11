@@ -1,52 +1,80 @@
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
-  <Package Name="IPXml"
-           Manufacturer="Rihaan Meherr"
-           Version="1.0.0"
-           UpgradeCode="a2e569a0-5a99-4209-a4ce-bd6b01c3cb53">
+  
+  <Package
+      Name="IPXml"
+      Manufacturer="Rihaan Meherr"
+      Version="1.0.0"
+      UpgradeCode="a2e569a0-5a99-4209-a4ce-bd6b01c3cb53"
+      InstallerVersion="500">
 
     <MediaTemplate />
 
+    <MajorUpgrade DowngradeErrorMessage="A newer version of IPXml is already installed." />
+
+    <!-- Features -->
     <Feature Id="MainFeature" Title="IPXml" Level="1">
       <ComponentGroupRef Id="ProductComponents"/>
-      <ComponentRef Id="AddToPath"/>
     </Feature>
 
-    <Feature Id="AddToPathFeature" Title="Add to PATH" Level="1">
+    <Feature Id="AddToPathFeature"
+             Title="Add IPXml to PATH"
+             Description="Adds IPXml to system PATH"
+             Level="1"
+             AllowAdvertise="no"
+             Absent="allow">
       <ComponentRef Id="AddToPath"/>
     </Feature>
 
   </Package>
 
+
+  <!-- Directories -->
   <Fragment>
-    <Directory Id="ProgramFilesFolder">
+    <StandardDirectory Id="ProgramFilesFolder">
       <Directory Id="INSTALLFOLDER" Name="IPXml">
         <Directory Id="BIN" Name="bin"/>
       </Directory>
-    </Directory>
+    </StandardDirectory>
   </Fragment>
 
+
+  <!-- Files -->
   <Fragment>
     <ComponentGroup Id="ProductComponents" Directory="BIN">
+
       <Component Id="ipxmlExe" Guid="*">
-        <File Source="dist/win/ipxml.exe"/>
+        <File Source="dist/win/ipxml.exe" />
       </Component>
+
       <Component Id="ipxmlccExe" Guid="*">
-        <File Source="dist/win/ipxml-cc.exe"/>
+        <File Source="dist/win/ipxml-cc.exe" />
       </Component>
+
       <Component Id="ipxmlrtExe" Guid="*">
-        <File Source="dist/win/ipxml-runtime.exe"/>
+        <File Source="dist/win/ipxml-runtime.exe" />
       </Component>
-    </Component>
+
+    </ComponentGroup>
   </Fragment>
 
+
+  <!-- Add to PATH -->
   <Fragment>
-    <Component Id="AddToPath" Guid="*">
-      <Environment Id="PATH"
-                   Name="PATH"
-                   Value="[BIN]"
-                   Action="set"
-                   Part="last"
-                   System="yes"/>
-    </Component>
+    <DirectoryRef Id="BIN">
+      <Component Id="AddToPath" Guid="*">
+        
+        <Environment
+            Id="AddToPathEnv"
+            Name="PATH"
+            Value="[BIN]"
+            Part="last"
+            Action="set"
+            System="yes"
+            Permanent="no"
+            Separator=";" />
+
+      </Component>
+    </DirectoryRef>
   </Fragment>
+
 </Wix>
