@@ -11,10 +11,11 @@ env:
   BINARIES: "ipxml ipxml-cc"
   DEVELOPER_ID_APP_CERT: ${{ secrets.DEVELOPER_APP_CERT }}
   DEVELOPER_ID_INSTALLER_CERT: ${{ secrets.INSTALLER_CERT }}
-  DEVELOPER_ID_APP: 
-  DEVELOPER_ID_INSTALLER:
+  DEVELOPER_ID_APP: "Developer ID Application: Navita Meher (5WY7FLX467)"
+  DEVELOPER_ID_INSTALLER: "Developer ID Installer: Navita Meher (5WY7FLX467)"
   CERT_PASSWORD: ${{ secrets.DEVELOPER_APP_CERT_KEY }}
-
+  APPLE_ID: chintanjain@gmail.com
+  APPLE_TEAM_ID: 5WY7FLX467
 jobs:
 
   windows:
