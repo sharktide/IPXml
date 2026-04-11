@@ -11,7 +11,7 @@ on:
 
 jobs:
   build_and_package:
-    runs-on: <span data-color="blue">${{ matrix.os }}</span>
+    runs-on: ${{ matrix.os }}
     strategy:
       matrix:
         os: [ windows-latest, ubuntu-latest, macos-latest ]
