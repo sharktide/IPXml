@@ -12,6 +12,7 @@ env:
   DEVELOPER_ID_APP_CERT: ${{ secrets.DEVELOPER_APP_CERT }}
   DEVELOPER_ID_INSTALLER_CERT: ${{ secrets.INSTALLER_CERT }}
   DEVELOPER_ID_APP: 
+  DEVELOPER_ID_INSTALLER:
   CERT_PASSWORD: ${{ secrets.DEVELOPER_APP_CERT_KEY }}
 
 jobs:
@@ -26,7 +27,7 @@ jobs:
         run: cargo build --release
 
       - name: Install WiX v4
-        run: choco install wixtoolset --version=4.0.4 -y
+        run: choco install wixtoolset -y
 
       - name: Prepare files
         shell: bash
@@ -60,7 +61,6 @@ jobs:
           mkdir -p pkgroot/opt/ipxml/bin
           cp target/release/ipxml pkgroot/opt/ipxml/bin/
           cp target/release/ipxml-cc pkgroot/opt/ipxml/bin/
-          cp target/release/ipxml-runtime pkgroot/opt/ipxml/bin/
 
       - name: Create postinstall script
         run: |
@@ -69,7 +69,6 @@ jobs:
           #!/bin/bash
           ln -sf /opt/ipxml/bin/ipxml /usr/local/bin/ipxml
           ln -sf /opt/ipxml/bin/ipxml-cc /usr/local/bin/ipxml-cc
-          ln -sf /opt/ipxml/bin/ipxml-runtime /usr/local/bin/ipxml-runtime
           EOF
           chmod +x scripts/postinstall.sh
 
@@ -101,7 +100,6 @@ jobs:
           mkdir -p pkgroot/usr/local/bin
           cp target/release/ipxml pkgroot/usr/local/bin/
           cp target/release/ipxml-cc pkgroot/usr/local/bin/
-          cp target/release/ipxml-runtime pkgroot/usr/local/bin/
 
       - name: Import certificates
         run: |
@@ -125,7 +123,7 @@ jobs:
         run: |
           pkgbuild \
             --root pkgroot \
-            --identifier com.example.ipxml \
+            --identifier com.ipxml.runtime \
             --version $VERSION \
             --install-location / \
             ipxml.pkg
