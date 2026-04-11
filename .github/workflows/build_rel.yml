@@ -16,6 +16,7 @@ env:
   CERT_PASSWORD: ${{ secrets.DEVELOPER_APP_CERT_KEY }}
   APPLE_ID: chintanjain@gmail.com
   APPLE_TEAM_ID: 5WY7FLX467
+  APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
 jobs:
 
   windows:
