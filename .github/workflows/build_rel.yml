@@ -36,9 +36,9 @@ jobs:
           cargo install cargo-wix
           cargo install cargo-inno
           # Build the MSI installer using cargo-wix
-          cargo wix --quiet --no-build --source target/release
+          cargo wix --no-build --source target/release
           # Build an EXE installer using Inno Setup
-          cargo inno --quiet --source target/release
+          cargo inno --source target/release
           # Zip the binaries for unpackaged use
           mkdir -p dist/windows
           for bin in $BINARIES; do
@@ -54,9 +54,9 @@ jobs:
           cargo install cargo-deb
           cargo install cargo-appimage
           # Debian package
-          cargo deb --quiet --no-build --source target/release
+          cargo deb --no-build --source target/release
           # AppImage
-          cargo appimage --quiet --no-build --source target/release
+          cargo appimage --no-build --source target/release
           # Tar.gz for unpackaged use
           mkdir -p dist/linux
           for bin in $BINARIES; do
@@ -71,7 +71,7 @@ jobs:
           # Install packaging tools
           cargo install cargo-bundle
           # Bundle into .pkg and .dmg
-          cargo bundle --quiet --target x86_64-apple-darwin --release
+          cargo bundle --target x86_64-apple-darwin --release
           # Zip for unpackaged use
           mkdir -p dist/macos
           for bin in $BINARIES; do
