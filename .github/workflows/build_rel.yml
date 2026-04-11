@@ -31,7 +31,10 @@ jobs:
     
       - name: Install WiX Toolset
         run: dotnet tool install --global WiX
-    
+      
+      - name: Accept WiX EULA
+        run: wix eula accept wix7
+      
       - name: Build
         run: cargo build --release
 
