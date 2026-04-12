@@ -59,6 +59,18 @@ jobs:
           name: windows-msi
           path: ipxml.msi
 
+      - name: Zip binaries
+        shell: bash
+        run: |
+          cd target/release
+          zip ipxml-windows.zip ipxml.exe ipxml-cc.exe
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-binaries
+          path: |
+            target/release/ipxml-windows.zip
+
   linux:
     runs-on: ubuntu-latest
 
@@ -100,6 +112,17 @@ jobs:
         with:
           name: linux-deb
           path: "*.deb"
+
+      - name: Zip binaries
+        run: |
+          cd target/release
+          zip ipxml-linux.zip ipxml ipxml-cc
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-binaries
+          path: |
+            target/release/ipxml-linux.zip
 
   macos:
     runs-on: macos-latest
@@ -176,3 +199,51 @@ jobs:
         with:
           name: macos-pkg
           path: ipxml-signed.pkg
+
+      - name: Zip binaries
+        run: |
+          cd target/release
+          zip ipxml-macos.zip ipxml ipxml-cc
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mac-binaries
+          path: |
+            target/release/ipxml-macos.zip
+
+  release:
+    needs: [windows, linux, macos]
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read version
+        id: version
+        shell: bash
+        run: |
+          echo "VERSION=$(./installer/version.sh get)" >> $GITHUB_ENV
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+
+      - name: List files (debug)
+        run: ls -R dist
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ env.VERSION }}
+          name: Release v${{ env.VERSION }}
+          draft: false
+          prerelease: false
+          files: |
+            dist/**/*.msi
+            dist/**/*.deb
+            dist/**/*.pkg
+            dist/**/*.zip
