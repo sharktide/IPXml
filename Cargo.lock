@@ -2303,7 +2303,7 @@ dependencies = [
 
 [[package]]
 name = "ipxcs-core"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "anyhow",
  "ipxml-schema",
@@ -2315,7 +2315,7 @@ dependencies = [
 
 [[package]]
 name = "ipxml-bundle"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "ipxml-schema",
  "thiserror 1.0.69",
@@ -2324,7 +2324,7 @@ dependencies = [
 
 [[package]]
 name = "ipxml-cc"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -2334,7 +2334,7 @@ dependencies = [
 
 [[package]]
 name = "ipxml-runtime"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "anyhow",
  "axum",
@@ -2351,7 +2351,7 @@ dependencies = [
 
 [[package]]
 name = "ipxml-schema"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -2361,14 +2361,14 @@ dependencies = [
 
 [[package]]
 name = "ipxml-ui-core"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "ipxml-schema",
 ]
 
 [[package]]
 name = "ipxml-ui-egui"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "anyhow",
  "eframe",
