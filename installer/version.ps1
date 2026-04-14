@@ -33,7 +33,7 @@ function Update-CargoVersions {
             }
 
             if (($section -eq 'package' -or $section -eq 'package.metadata.bundle') -and $line -match '^[ \t]*version[ \t]*=[ \t]*".*"[ \t]*$') {
-                $lines[$i] = "version = \"$version\""
+                $lines[$i] = "version = `"$version`""
                 $updated = $true
             }
         }
