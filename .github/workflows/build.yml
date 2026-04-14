@@ -81,6 +81,7 @@ jobs:
 
       - name: Version + SHA
         run: |
+          sudo chmod +x installer/version.sh
           VERSION=$(./installer/version.sh get)
           SHORT_SHA=$(git rev-parse --short HEAD)
           echo "VERSION=$VERSION" >> $GITHUB_ENV
@@ -145,6 +146,7 @@ jobs:
 
       - name: Version + SHA
         run: |
+          sudo chmod +x installer/version.sh
           VERSION=$(./installer/version.sh get)
           SHORT_SHA=$(git rev-parse --short HEAD)
           echo "VERSION=$VERSION" >> $GITHUB_ENV

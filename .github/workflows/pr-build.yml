@@ -160,6 +160,7 @@ jobs:
 
       - name: Version + PR SHA
         run: |
+          sudo chmod +x installer/version.sh
           VERSION=$(./installer/version.sh get)
           SHA=$(git rev-parse --short HEAD)
           PR=${{ github.event.pull_request.number }}
@@ -216,6 +217,7 @@ jobs:
 
       - name: Version + PR SHA
         run: |
+          sudo chmod +x installer/version.sh
           VERSION=$(./installer/version.sh get)
           SHA=$(git rev-parse --short HEAD)
           PR=${{ github.event.pull_request.number }}

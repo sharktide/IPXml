@@ -95,6 +95,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: CHMOD Scripts
+        run: sudo chmod +x installer/version.sh
+
       - name: Read version
         run: echo "VERSION=$(./installer/version.sh get)" >> $GITHUB_ENV
 
@@ -154,6 +157,9 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+
+      - name: CHMOD Scripts
+        run: sudo chmod +x installer/version.sh
 
       - name: Read version
         run: echo "VERSION=$(./installer/version.sh get)" >> $GITHUB_ENV
@@ -238,6 +244,9 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+
+      - name: CHMOD Scripts
+        run: sudo chmod +x installer/version.sh
 
       - name: Read version
         run: echo "VERSION=$(./installer/version.sh get)" >> $GITHUB_ENV
