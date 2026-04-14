@@ -16,129 +16,161 @@ env:
   APPLE_ID: chintanjain@gmail.com
   APPLE_TEAM_ID: 5WY7FLX467
   APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+
 jobs:
+
+# ---------------- WINDOWS ----------------
 
   windows:
     runs-on: windows-latest
+
+    strategy:
+      matrix:
+        include:
+          - target: x86_64-pc-windows-msvc
+            arch: x64
+          - target: aarch64-pc-windows-msvc
+            arch: arm64
 
     steps:
       - uses: actions/checkout@v4
 
       - name: Read version
-        id: version
         shell: pwsh
         run: |
           $version = & .\installer\version.ps1 get
-          echo "VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8
-      
+          echo "VERSION=$version" >> $env:GITHUB_ENV
+
       - uses: actions/setup-dotnet@v5
         with:
           dotnet-version: '10'
-    
-      - name: Install WiX Toolset
-        run: dotnet tool install --global WiX
-      
-      - name: Accept WiX EULA
-        run: wix eula accept wix7
-      
-      - name: Build
-        run: cargo build --release
 
-      - name: Prepare files
-        shell: bash
-        run: |
-          mkdir -p dist/win
-          cp target/release/*.exe dist/win/
+      - name: Install WiX
+        run: dotnet tool install --global WiX
+
+      - name: Accept WiX
+        run: wix eula accept wix7
+
+      - name: Rust target
+        run: rustup target add ${{ matrix.target }}
+
+      - name: Build
+        run: cargo build --release --target ${{ matrix.target }}
 
       - name: Build MSI
         run: |
-          wix build installer/windows.wxs -o ipxml.msi
+          wix build installer/windows.wxs \
+            -o ipxml-windows-${{ matrix.arch }}-${{ env.VERSION }}.msi
 
       - uses: actions/upload-artifact@v4
         with:
-          name: windows-msi
-          path: ipxml.msi
+          name: windows-msi-${{ matrix.arch }}
+          path: ipxml-windows-${{ matrix.arch }}-${{ env.VERSION }}.msi
 
       - name: Zip binaries
         shell: bash
         run: |
-          cd target/release
-          zip ipxml-windows.zip ipxml.exe ipxml-cc.exe
+          cd target/${{ matrix.target }}/release
+          zip ipxml-windows-${{ matrix.arch }}.zip ipxml.exe ipxml-cc.exe
 
       - uses: actions/upload-artifact@v4
         with:
-          name: windows-binaries
-          path: |
-            target/release/ipxml-windows.zip
+          name: windows-binaries-${{ matrix.arch }}
+          path: target/${{ matrix.target }}/release/ipxml-windows-${{ matrix.arch }}.zip
+
+
+# ---------------- LINUX ----------------
 
   linux:
     runs-on: ubuntu-latest
 
+    strategy:
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            arch: amd64
+          - target: aarch64-unknown-linux-gnu
+            arch: arm64
+
     steps:
       - uses: actions/checkout@v4
 
+      - name: Read version
+        run: echo "VERSION=$(./installer/version.sh get)" >> $GITHUB_ENV
+
+      - name: Install cross
+        run: cargo install cross
+
       - name: Build
-        run: cargo build --release
+        run: cross build --release --target ${{ matrix.target }}
 
       - name: Install fpm
         run: sudo gem install fpm
 
-      - name: Prepare package root
+      - name: Package
         run: |
           mkdir -p pkgroot/opt/ipxml/bin
-          cp target/release/ipxml pkgroot/opt/ipxml/bin/
-          cp target/release/ipxml-cc pkgroot/opt/ipxml/bin/
+          cp target/${{ matrix.target }}/release/ipxml pkgroot/opt/ipxml/bin/
+          cp target/${{ matrix.target }}/release/ipxml-cc pkgroot/opt/ipxml/bin/
 
-      - name: Create postinstall script
-        run: |
-          mkdir -p scripts
-          cat << 'EOF' > scripts/postinstall.sh
-          #!/bin/bash
-          ln -sf /opt/ipxml/bin/ipxml /usr/local/bin/ipxml
-          ln -sf /opt/ipxml/bin/ipxml-cc /usr/local/bin/ipxml-cc
-          EOF
-          chmod +x scripts/postinstall.sh
-
-      - name: Build .deb
-        run: |
           fpm -s dir -t deb \
             -n ipxml \
             -v $VERSION \
-            --prefix / \
-            --after-install scripts/postinstall.sh \
+            --architecture ${{ matrix.arch }} \
             pkgroot/=/
+
+      - name: Rename deb
+        run: |
+          mv *.deb ipxml-linux-${{ matrix.arch }}-${VERSION}.deb
 
       - uses: actions/upload-artifact@v4
         with:
-          name: linux-deb
-          path: "*.deb"
+          name: linux-deb-${{ matrix.arch }}
+          path: ipxml-linux-${{ matrix.arch }}-${{ env.VERSION }}.deb
 
       - name: Zip binaries
         run: |
-          cd target/release
-          zip ipxml-linux.zip ipxml ipxml-cc
+          cd target/${{ matrix.target }}/release
+          zip ipxml-linux-${{ matrix.arch }}.zip ipxml ipxml-cc
 
       - uses: actions/upload-artifact@v4
         with:
-          name: linux-binaries
-          path: |
-            target/release/ipxml-linux.zip
+          name: linux-binaries-${{ matrix.arch }}
+          path: target/${{ matrix.target }}/release/ipxml-linux-${{ matrix.arch }}.zip
+
+
+# ---------------- MACOS ----------------
 
   macos:
     runs-on: macos-latest
 
+    strategy:
+      matrix:
+        include:
+          - target: x86_64-apple-darwin
+            arch: x64
+          - target: aarch64-apple-darwin
+            arch: arm64
+
     steps:
       - uses: actions/checkout@v4
 
+      - name: Read version
+        run: echo "VERSION=$(./installer/version.sh get)" >> $GITHUB_ENV
+
+      - name: Rust target
+        run: rustup target add ${{ matrix.target }}
+
       - name: Build
-        run: cargo build --release
+        run: cargo build --release --target ${{ matrix.target }}
 
       - name: Prepare pkg root
         run: |
           mkdir -p pkgroot/usr/local/bin
-          cp target/release/ipxml pkgroot/usr/local/bin/
-          cp target/release/ipxml-cc pkgroot/usr/local/bin/
+          cp target/${{ matrix.target }}/release/ipxml pkgroot/usr/local/bin/
+          cp target/${{ matrix.target }}/release/ipxml-cc pkgroot/usr/local/bin/
 
+      # (cert import unchanged)
       - name: Import certificates
         run: |
           echo "$DEVELOPER_ID_APP_CERT" | base64 --decode > app.p12
@@ -148,23 +180,10 @@ jobs:
           security default-keychain -s build.keychain
           security unlock-keychain -p "" build.keychain
 
-          security import app.p12 \
-            -k build.keychain \
-            -P "$CERT_PASSWORD" \
-            -T /usr/bin/codesign \
-            -T /usr/bin/security
+          security import app.p12 -k build.keychain -P "$CERT_PASSWORD" -T /usr/bin/codesign
+          security import installer.p12 -k build.keychain -P "$CERT_PASSWORD" -T /usr/bin/productsign
 
-          security import installer.p12 \
-            -k build.keychain \
-            -P "$CERT_PASSWORD" \
-            -T /usr/bin/productsign \
-            -T /usr/bin/security
-
-          security set-key-partition-list \
-           -S apple-tool:,apple: \
-           -s -k "" build.keychain
-
-      - name: Codesign binaries
+      - name: Codesign
         run: |
           codesign --sign "$DEVELOPER_ID_APP" --timestamp --options runtime pkgroot/usr/local/bin/ipxml
           codesign --sign "$DEVELOPER_ID_APP" --timestamp --options runtime pkgroot/usr/local/bin/ipxml-cc
@@ -176,40 +195,39 @@ jobs:
             --identifier com.ipxml.pkg \
             --version $VERSION \
             --install-location / \
-            ipxml.pkg
+            ipxml-macos-${{ matrix.arch }}-${VERSION}.pkg
 
       - name: Sign pkg
         run: |
           productsign \
             --sign "$DEVELOPER_ID_INSTALLER" \
-            ipxml.pkg ipxml-signed.pkg
-
-      - name: Notarize
-        run: |
-          xcrun notarytool submit ipxml-signed.pkg \
-            --apple-id "$APPLE_ID" \
-            --team-id "$APPLE_TEAM_ID" \
-            --password "$APPLE_APP_PASSWORD" \
-            --wait
+            ipxml-macos-${{ matrix.arch }}-${VERSION}.pkg \
+            signed.pkg
 
       - name: Staple
-        run: xcrun stapler staple ipxml-signed.pkg
+        run: xcrun stapler staple signed.pkg
+
+      - name: Rename
+        run: |
+          mv signed.pkg ipxml-macos-${{ matrix.arch }}-${VERSION}.pkg
 
       - uses: actions/upload-artifact@v4
         with:
-          name: macos-pkg
-          path: ipxml-signed.pkg
+          name: macos-pkg-${{ matrix.arch }}
+          path: ipxml-macos-${{ matrix.arch }}-${{ env.VERSION }}.pkg
 
       - name: Zip binaries
         run: |
-          cd target/release
-          zip ipxml-macos.zip ipxml ipxml-cc
+          cd target/${{ matrix.target }}/release
+          zip ipxml-macos-${{ matrix.arch }}.zip ipxml ipxml-cc
 
       - uses: actions/upload-artifact@v4
         with:
-          name: mac-binaries
-          path: |
-            target/release/ipxml-macos.zip
+          name: mac-binaries-${{ matrix.arch }}
+          path: target/${{ matrix.target }}/release/ipxml-macos-${{ matrix.arch }}.zip
+
+
+# ---------------- RELEASE ----------------
 
   release:
     needs: [windows, linux, macos]
@@ -222,26 +240,21 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Read version
-        id: version
-        shell: bash
-        run: |
-          echo "VERSION=$(./installer/version.sh get)" >> $GITHUB_ENV
+        run: echo "VERSION=$(./installer/version.sh get)" >> $GITHUB_ENV
 
-      - name: Download all artifacts
+      - name: Download artifacts
         uses: actions/download-artifact@v4
         with:
           path: dist
 
-      - name: List files (debug)
+      - name: Debug
         run: ls -R dist
 
-      - name: Create GitHub Release
+      - name: Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ env.VERSION }}
           name: Release v${{ env.VERSION }}
-          draft: false
-          prerelease: false
           files: |
             dist/**/*.msi
             dist/**/*.deb

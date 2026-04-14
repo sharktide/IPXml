@@ -1,9 +1,7 @@
-name: Build & Package (Native Installers)
+name: Build & Package (Nightly)
 
 on:
   push:
-    branches: [ main ]
-  pull_request:
 
 env:
   APP_NAME: ipxml
@@ -16,57 +14,83 @@ env:
   APPLE_ID: chintanjain@gmail.com
   APPLE_TEAM_ID: 5WY7FLX467
   APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+
 jobs:
 
   windows:
     runs-on: windows-latest
 
+    strategy:
+      matrix:
+        include:
+          - target: x86_64-pc-windows-msvc
+            arch: x64
+          - target: aarch64-pc-windows-msvc
+            arch: arm64
+
     steps:
       - uses: actions/checkout@v4
 
-      - name: Read version
-        id: version
+      - name: Version + SHA
         shell: pwsh
         run: |
           $version = & .\installer\version.ps1 get
-          echo "VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8
-      
+          $sha = "${{ github.sha }}".Substring(0,7)
+          echo "VERSION=$version" >> $env:GITHUB_ENV
+          echo "SHORT_SHA=$sha" >> $env:GITHUB_ENV
+
       - uses: actions/setup-dotnet@v5
         with:
           dotnet-version: '10'
     
-      - name: Install WiX Toolset
+      - name: Install WiX
         run: dotnet tool install --global WiX
       
-      - name: Accept WiX EULA
+      - name: Accept WiX
         run: wix eula accept wix7
-      
-      - name: Build
-        run: cargo build --release
 
-      - name: Prepare files
-        shell: bash
-        run: |
-          mkdir -p dist/win
-          cp target/release/*.exe dist/win/
+      - name: Rust target
+        run: rustup target add ${{ matrix.target }}
+
+      - name: Build
+        run: cargo build --release --target ${{ matrix.target }}
 
       - name: Build MSI
         run: |
-          wix build installer/windows.wxs -o ipxml.msi
+          wix build installer/windows.wxs \
+            -o ipxml-win-${{ matrix.arch }}-${{ env.VERSION }}-${{ env.SHORT_SHA }}.msi
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
-          name: windows-msi
-          path: ipxml.msi
+          archive: false
+          path: ipxml-win-${{ matrix.arch }}-${{ env.VERSION }}-${{ env.SHORT_SHA }}.msi
 
   linux:
     runs-on: ubuntu-latest
 
+    strategy:
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            arch: amd64
+          - target: aarch64-unknown-linux-gnu
+            arch: arm64
+
     steps:
       - uses: actions/checkout@v4
 
+      - name: Version + SHA
+        run: |
+          VERSION=$(./installer/version.sh get)
+          SHORT_SHA=$(git rev-parse --short HEAD)
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+          echo "SHORT_SHA=$SHORT_SHA" >> $GITHUB_ENV
+
+      - name: Install cross
+        run: cargo install cross
+
       - name: Build
-        run: cargo build --release
+        run: cross build --release --target ${{ matrix.target }}
 
       - name: Install fpm
         run: sudo gem install fpm
@@ -74,10 +98,10 @@ jobs:
       - name: Prepare package root
         run: |
           mkdir -p pkgroot/opt/ipxml/bin
-          cp target/release/ipxml pkgroot/opt/ipxml/bin/
-          cp target/release/ipxml-cc pkgroot/opt/ipxml/bin/
+          cp target/${{ matrix.target }}/release/ipxml pkgroot/opt/ipxml/bin/
+          cp target/${{ matrix.target }}/release/ipxml-cc pkgroot/opt/ipxml/bin/
 
-      - name: Create postinstall script
+      - name: Create postinstall
         run: |
           mkdir -p scripts
           cat << 'EOF' > scripts/postinstall.sh
@@ -87,36 +111,58 @@ jobs:
           EOF
           chmod +x scripts/postinstall.sh
 
-      - name: Build .deb
+      - name: Build deb
         run: |
+          OUTPUT=ipxml-linux-${{ matrix.arch }}-${VERSION}-${SHORT_SHA}.deb
+
           fpm -s dir -t deb \
             -n ipxml \
             -v $VERSION \
+            --architecture ${{ matrix.arch }} \
             --prefix / \
             --after-install scripts/postinstall.sh \
+            -p $OUTPUT \
             pkgroot/=/
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
-          name: linux-deb
-          path: "*.deb"
+          archive: false
+          path: ipxml-linux-${{ matrix.arch }}-${{ env.VERSION }}-${{ env.SHORT_SHA }}.deb
 
   macos:
     runs-on: macos-latest
 
+    strategy:
+      matrix:
+        include:
+          - target: x86_64-apple-darwin
+            arch: x64
+          - target: aarch64-apple-darwin
+            arch: arm64
+
     steps:
       - uses: actions/checkout@v4
 
-      - name: Build
-        run: cargo build --release
+      - name: Version + SHA
+        run: |
+          VERSION=$(./installer/version.sh get)
+          SHORT_SHA=$(git rev-parse --short HEAD)
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+          echo "SHORT_SHA=$SHORT_SHA" >> $GITHUB_ENV
 
-      - name: Prepare pkg root
+      - name: Rust target
+        run: rustup target add ${{ matrix.target }}
+
+      - name: Build
+        run: cargo build --release --target ${{ matrix.target }}
+
+      - name: Prepare root
         run: |
           mkdir -p pkgroot/usr/local/bin
-          cp target/release/ipxml pkgroot/usr/local/bin/
-          cp target/release/ipxml-cc pkgroot/usr/local/bin/
+          cp target/${{ matrix.target }}/release/ipxml pkgroot/usr/local/bin/
+          cp target/${{ matrix.target }}/release/ipxml-cc pkgroot/usr/local/bin/
 
-      - name: Import certificates
+      - name: Import certs
         run: |
           echo "$DEVELOPER_ID_APP_CERT" | base64 --decode > app.p12
           echo "$DEVELOPER_ID_INSTALLER_CERT" | base64 --decode > installer.p12
@@ -141,7 +187,7 @@ jobs:
            -S apple-tool:,apple: \
            -s -k "" build.keychain
 
-      - name: Codesign binaries
+      - name: Codesign
         run: |
           codesign --sign "$DEVELOPER_ID_APP" --timestamp --options runtime pkgroot/usr/local/bin/ipxml
           codesign --sign "$DEVELOPER_ID_APP" --timestamp --options runtime pkgroot/usr/local/bin/ipxml-cc
@@ -153,26 +199,31 @@ jobs:
             --identifier com.ipxml.pkg \
             --version $VERSION \
             --install-location / \
-            ipxml.pkg
+            ipxml-mac-${{ matrix.arch }}-${VERSION}-${SHORT_SHA}.pkg
 
-      - name: Sign pkg
+      - name: Sign
         run: |
           productsign \
             --sign "$DEVELOPER_ID_INSTALLER" \
-            ipxml.pkg ipxml-signed.pkg
+            ipxml-mac-${{ matrix.arch }}-${VERSION}-${SHORT_SHA}.pkg \
+            signed.pkg
 
       - name: Notarize
         run: |
-          xcrun notarytool submit ipxml-signed.pkg \
+          xcrun notarytool submit signed.pkg \
             --apple-id "$APPLE_ID" \
             --team-id "$APPLE_TEAM_ID" \
             --password "$APPLE_APP_PASSWORD" \
             --wait
 
       - name: Staple
-        run: xcrun stapler staple ipxml-signed.pkg
+        run: xcrun stapler staple signed.pkg
 
-      - uses: actions/upload-artifact@v4
+      - name: Rename final
+        run: |
+          mv signed.pkg ipxml-mac-${{ matrix.arch }}-${VERSION}-${SHORT_SHA}.pkg
+
+      - uses: actions/upload-artifact@v7
         with:
-          name: macos-pkg
-          path: ipxml-signed.pkg
+          archive: false
+          path: ipxml-mac-${{ matrix.arch }}-${{ env.VERSION }}-${{ env.SHORT_SHA }}.pkg

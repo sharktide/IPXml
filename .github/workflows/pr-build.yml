@@ -1,0 +1,247 @@
+name: PR Build Matrix
+
+on:
+  pull_request:
+    branches: [ main ]
+    types: [opened, synchronize, reopened]
+
+env:
+  APP_NAME: ipxml
+
+jobs:
+
+# ---------------- INIT COMMENT ----------------
+
+  init:
+    runs-on: ubuntu-latest
+    outputs:
+      comment-id: ${{ steps.comment.outputs.comment-id }}
+
+    steps:
+      - name: Create PR Comment
+        id: comment
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const body = `
+                ## 🚧 PR Build Status
+
+                | OS | x64 | arm64 |
+                |----|-----|-------|
+                | 🪟 Windows | ⏳ | ⏳ |
+                | 🐧 Linux | ⏳ | ⏳ |
+                | 🍎 macOS | ⏳ | ⏳ |
+
+                **Suffix:** PR-${{ github.event.pull_request.number }}-<sha>
+
+                Updating live...
+            `
+
+            const { data } = await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body
+            })
+
+            core.setOutput("comment-id", data.id)
+
+
+# ---------------- WINDOWS ----------------
+
+  windows:
+    needs: init
+    runs-on: windows-latest
+
+    strategy:
+      matrix:
+        include:
+          - target: x86_64-pc-windows-msvc
+            arch: x64
+          - target: aarch64-pc-windows-msvc
+            arch: arm64
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Version + PR SHA
+        shell: pwsh
+        run: |
+          $version = & .\installer\version.ps1 get
+          $sha = "${{ github.sha }}".Substring(0,7)
+          $pr = "${{ github.event.pull_request.number }}"
+          echo "VERSION=$version" >> $env:GITHUB_ENV
+          echo "SUFFIX=PR-$pr-$sha" >> $env:GITHUB_ENV
+
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10'
+
+      - name: Install WiX
+        run: dotnet tool install --global WiX
+
+      - name: Accept WiX
+        run: wix eula accept wix7
+
+      - name: Rust target
+        run: rustup target add ${{ matrix.target }}
+
+      - name: Build
+        run: cargo build --release --target ${{ matrix.target }}
+
+      - name: Build MSI
+        run: |
+          wix build installer/windows.wxs \
+            -o ipxml-win-${{ matrix.arch }}-${{ env.VERSION }}-${{ env.SUFFIX }}.msi
+
+      - name: Upload
+        uses: actions/upload-artifact@v7
+        with:
+          archive: false
+          path: ipxml-win-${{ matrix.arch }}-${{ env.VERSION }}-${{ env.SUFFIX }}.msi
+
+      - name: Update Comment
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const id = ${{ needs.init.outputs.comment-id }}
+            const success = "${{ job.status }}" === "success" ? "✅" : "❌"
+
+            const map = {
+              x64: ["🪟 Windows", 2],
+              arm64: ["🪟 Windows", 3]
+            }
+
+            const arch = "${{ matrix.arch }}"
+
+            const comment = await github.rest.issues.getComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              comment_id: id
+            })
+
+            let body = comment.data.body
+
+            const regex = new RegExp(`(🪟 Windows \\| .*?)`)
+            const lines = body.split("\n")
+
+            const row = lines.findIndex(l => l.includes("🪟 Windows"))
+            const cols = lines[row].split("|")
+
+            if (arch === "x64") cols[2] = ` ${success} `
+            if (arch === "arm64") cols[3] = ` ${success} `
+
+            lines[row] = cols.join("|")
+
+            await github.rest.issues.updateComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              comment_id: id,
+              body: lines.join("\n")
+            })
+
+
+# ---------------- LINUX ----------------
+
+  linux:
+    needs: init
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            arch: amd64
+          - target: aarch64-unknown-linux-gnu
+            arch: arm64
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Version + PR SHA
+        run: |
+          VERSION=$(./installer/version.sh get)
+          SHA=$(git rev-parse --short HEAD)
+          PR=${{ github.event.pull_request.number }}
+
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+          echo "SUFFIX=PR-$PR-$SHA" >> $GITHUB_ENV
+
+      - name: Install cross
+        run: cargo install cross
+
+      - name: Build
+        run: cross build --release --target ${{ matrix.target }}
+
+      - name: Install fpm
+        run: sudo gem install fpm
+
+      - name: Package
+        run: |
+          OUTPUT=ipxml-linux-${{ matrix.arch }}-${VERSION}-${SUFFIX}.deb
+
+          mkdir -p pkgroot/opt/ipxml/bin
+          cp target/${{ matrix.target }}/release/ipxml pkgroot/opt/ipxml/bin/
+          cp target/${{ matrix.target }}/release/ipxml-cc pkgroot/opt/ipxml/bin/
+
+          fpm -s dir -t deb \
+            -n ipxml \
+            -v $VERSION \
+            --architecture ${{ matrix.arch }} \
+            pkgroot/=/ \
+            -p $OUTPUT
+
+      - uses: actions/upload-artifact@v7
+        with:
+          archive: false
+          path: ipxml-linux-${{ matrix.arch }}-${{ env.VERSION }}-${{ env.SUFFIX }}.deb
+
+
+# ---------------- MAC ----------------
+
+  macos:
+    needs: init
+    runs-on: macos-latest
+
+    strategy:
+      matrix:
+        include:
+          - target: x86_64-apple-darwin
+            arch: x64
+          - target: aarch64-apple-darwin
+            arch: arm64
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Version + PR SHA
+        run: |
+          VERSION=$(./installer/version.sh get)
+          SHA=$(git rev-parse --short HEAD)
+          PR=${{ github.event.pull_request.number }}
+
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+          echo "SUFFIX=PR-$PR-$SHA" >> $GITHUB_ENV
+
+      - name: Build
+        run: cargo build --release --target ${{ matrix.target }}
+
+      - name: Package
+        run: |
+          OUTPUT=ipxml-mac-${{ matrix.arch }}-${VERSION}-${SUFFIX}.pkg
+
+          mkdir -p pkgroot/usr/local/bin
+          cp target/${{ matrix.target }}/release/ipxml pkgroot/usr/local/bin/
+          cp target/${{ matrix.target }}/release/ipxml-cc pkgroot/usr/local/bin/
+
+          pkgbuild \
+            --root pkgroot \
+            --identifier com.ipxml.pkg \
+            --version $VERSION \
+            --install-location / \
+            $OUTPUT
+
+      - uses: actions/upload-artifact@v7
+        with:
+          archive: false
+          path: ipxml-mac-${{ matrix.arch }}-${{ env.VERSION }}-${{ env.SUFFIX }}.pkg
