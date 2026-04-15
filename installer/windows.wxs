@@ -42,11 +42,11 @@
     <ComponentGroup Id="ProductComponents" Directory="BIN">
 
       <Component Id="ipxmlExe" Guid="*">
-        <File Source="dist/win/ipxml.exe" />
+        <File Source="target/release/ipxml.exe" />
       </Component>
 
       <Component Id="ipxmlccExe" Guid="*">
-        <File Source="dist/win/ipxml-cc.exe" />
+        <File Source="target/release/ipxml-cc.exe" />
       </Component>
 
     </ComponentGroup>
