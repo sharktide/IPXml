@@ -57,7 +57,7 @@ jobs:
 
       - name: Build MSI
         run: |
-          wix build installer/windows.wxs \
+          wix build installer/windows.wxs `
             -o ipxml-win-${{ matrix.arch }}-${{ env.VERSION }}-${{ env.SHORT_SHA }}.msi
 
       - uses: actions/upload-artifact@v7
